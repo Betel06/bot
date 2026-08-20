@@ -147,8 +147,9 @@ def monitor_loop():
     try:
         if ia_ativa():
             intervalo = int(os.environ.get("AI_INTERVALO", str(INTERVALO_MONITOR)))
-            logging.info("[IA] cerebro ATIVO (modelo {}), rodada a cada {}s".format(
-                os.environ.get("AI_MODEL", "gemini-3.5-flash"), intervalo))
+            from core.ai_brain import MODELOS as _cadeia
+            logging.info("[IA] cerebro ATIVO (cadeia: {}), rodada a cada {}s".format(
+                " -> ".join(_cadeia), intervalo))
         else:
             logging.warning("[IA] DESATIVADA - defina AI_ENABLED=1 e GEMINI_API_KEY")
     except Exception:
