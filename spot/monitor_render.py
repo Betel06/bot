@@ -19,6 +19,12 @@ from spot.strategy import analisar
 from spot.telegram import carregar_config, enviar_mensagem, formatar_sinal
 from core.dados import buscar_historico
 
+try:
+    from spot.ai_brain import analisar_com_ia, ia_ativa
+except Exception:
+    analisar_com_ia = None
+    ia_ativa = lambda: False
+
 
 POSICOES_FILE = os.path.join(BOT_DIR, "logs", "posicoes.json")
 RESULTADOS_FILE = os.path.join(BOT_DIR, "logs", "resultados.json")
@@ -116,10 +122,14 @@ def checar_posicoes(posicoes_abertas):
 
 
 def checar_sinais():
+    usar_ia = analisar_com_ia is not None and ia_ativa()
     sinais = []
     for par in PARES:
         try:
-            r = analisar(par)
+            if usar_ia:
+                r = analisar_com_ia(par)
+            else:
+                r = analisar(par)
             if r and r["sinal"]:
                 sinais.append(r)
         except Exception:
@@ -141,6 +151,15 @@ def monitor_loop():
         enviar_mensagem("[BOT] Monitor ONLINE no Render 24/7!")
 
     rodada = 0
+
+    intervalo = INTERVALO_MONITOR
+    try:
+        if ia_ativa():
+            intervalo = int(os.environ.get("AI_INTERVALO", "900"))
+            logging.info("[IA] cerebro ATIVO (modelo {}), rodada a cada {}s".format(
+                os.environ.get("AI_MODEL", "gemini-2.5-flash"), intervalo))
+    except Exception:
+        pass
 
     while True:
         rodada += 1
@@ -199,7 +218,7 @@ def monitor_loop():
         except Exception as e:
             logging.error("[ERRO] {}".format(e))
 
-        time.sleep(300)
+        time.sleep(intervalo)
 
 
 def keep_alive_loop():
