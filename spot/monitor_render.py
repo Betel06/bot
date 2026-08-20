@@ -4,6 +4,7 @@ import json
 import time
 import threading
 import logging
+import collections
 from datetime import datetime
 
 import requests
@@ -13,6 +14,21 @@ sys.path.insert(0, BOT_DIR)
 os.chdir(BOT_DIR)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+LOG_BUFFER = collections.deque(maxlen=200)
+
+
+class _BufferHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            LOG_BUFFER.append(self.format(record))
+        except Exception:
+            pass
+
+
+_bufh = _BufferHandler()
+_bufh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+logging.getLogger().addHandler(_bufh)
 
 from spot.config import PARES, STOP_PCT, ROI_TABELA
 from spot.strategy import analisar
@@ -156,7 +172,10 @@ def monitor_loop():
     resultados = carregar_resultados()
 
     if telegram_ok:
-        enviar_mensagem("[BOT] Monitor ONLINE no Render 24/7!")
+        try:
+            enviar_mensagem("[BOT] Monitor ONLINE no Render 24/7!")
+        except Exception as e:
+            logging.error("[TELEGRAM] falha no startup: {}".format(e))
 
     rodada = 0
 
@@ -270,8 +289,21 @@ if __name__ == "__main__":
             "ia": ESTADO,
         }
 
-    monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
-    monitor_thread.start()
+    @app.route("/debug")
+    def debug():
+        try:
+            viva = MONITOR_THREAD.is_alive()
+        except Exception:
+            viva = False
+        return {
+            "thread_viva": viva,
+            "estado": ESTADO,
+            "logs": list(LOG_BUFFER)[-80:],
+        }
+
+    global MONITOR_THREAD
+    MONITOR_THREAD = threading.Thread(target=monitor_loop, daemon=True)
+    MONITOR_THREAD.start()
 
     ping_thread = threading.Thread(target=keep_alive_loop, daemon=True)
     ping_thread.start()
