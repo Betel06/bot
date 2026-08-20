@@ -29,6 +29,13 @@ except Exception:
 POSICOES_FILE = os.path.join(BOT_DIR, "logs", "posicoes.json")
 RESULTADOS_FILE = os.path.join(BOT_DIR, "logs", "resultados.json")
 
+ESTADO = {
+    "modo": "-",
+    "modelo": os.environ.get("AI_MODEL", "gemini-3.5-flash"),
+    "ultima_rodada": None,
+    "sinais_gerados": 0,
+}
+
 
 def carregar_posicoes():
     try:
@@ -123,6 +130,7 @@ def checar_posicoes(posicoes_abertas):
 
 def checar_sinais():
     usar_ia = analisar_com_ia is not None and ia_ativa()
+    ESTADO["modo"] = "IA" if usar_ia else "RSI"
     sinais = []
     for par in PARES:
         try:
@@ -188,6 +196,8 @@ def monitor_loop():
                 })
 
             sinais = checar_sinais()
+            ESTADO["ultima_rodada"] = agora.strftime("%d/%m %H:%M:%S")
+            ESTADO["sinais_gerados"] += len(sinais)
 
             for s in sinais:
                 ja_aberto = any(p["par"] == s["par"] for p in posicoes_abertas)
@@ -257,6 +267,7 @@ if __name__ == "__main__":
             "losses": r["losses"],
             "lucro": r["total_lucro"],
             "posicoes_abertas": len(p),
+            "ia": ESTADO,
         }
 
     monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
