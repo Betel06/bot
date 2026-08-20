@@ -30,7 +30,7 @@ _bufh = _BufferHandler()
 _bufh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logging.getLogger().addHandler(_bufh)
 
-from futuro.config import PARES, INTERVALO_MONITOR, ENTRADA_USD, MERCADO
+from futuro.config import PARES, PARES_POR_RODADA, INTERVALO_MONITOR, ENTRADA_USD, MERCADO
 from core.ai_brain import analisar_com_ia, ia_ativa
 from core.dados import buscar_historico
 from futuro.telegram import carregar_config, enviar_mensagem, formatar_sinal, formatar_resultado
@@ -108,11 +108,25 @@ def checar_posicoes(posicoes_abertas):
     return resultado
 
 
+_ROTACAO = {"idx": 0}
+
+
+def lote_da_rodada():
+    """Retorna o proximo lote de pares (rotacao circular pela lista inteira)."""
+    n = max(1, min(PARES_POR_RODADA, len(PARES)))
+    idx0 = _ROTACAO["idx"] % len(PARES)
+    lote = [PARES[(idx0 + i) % len(PARES)] for i in range(n)]
+    _ROTACAO["idx"] = (idx0 + n) % len(PARES)
+    return lote
+
+
 def checar_sinais():
     usar_ia = ia_ativa()
     ESTADO["modo"] = "IA" if usar_ia else "-"
     sinais = []
-    for par in PARES:
+    lote = lote_da_rodada()
+    logging.info("[IA] lote da rodada: {}".format(", ".join(lote)))
+    for par in lote:
         try:
             if usar_ia:
                 r = analisar_com_ia(par, mercado=MERCADO)
@@ -137,7 +151,7 @@ def monitor_loop():
 
     if telegram_ok:
         try:
-            enviar_mensagem("🔵⚡ TRADER FUTURO ONLINE no Render 24/7!\nDay trade com IA (SMC) em BTC, ETH, SOL e XRP.")
+            enviar_mensagem("🔵⚡ TRADER FUTURO ONLINE no Render 24/7!\nDay trade com IA (SMC) em 12 pares: BTC, ETH, SOL, XRP, DOGE, AVAX, LINK, SUI, BNB, LTC, COLLECT e BTW.")
         except Exception as e:
             logging.error("[TELEGRAM] falha no startup: {}".format(e))
 
