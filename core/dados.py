@@ -47,19 +47,23 @@ def _fazer_requisicao(url, params, tentativas=TENTATIVAS_MAXIMAS):
     raise Exception(f"Falha apos {tentativas} tentativas: {ultimo_erro}")
 
 
-def buscar_candles(par="BTCUSDT", intervalo="15m", limite=200):
+URL_SPOT = "https://api.binance.com/api/v3/klines"
+URL_FUTUROS = "https://fapi.binance.com/fapi/v1/klines"
+
+
+def _url_por_mercado(mercado):
+    if str(mercado).lower() in ("futuros", "futuro", "futures", "fapi"):
+        return URL_FUTUROS
+    return URL_SPOT
+
+
+def buscar_candles(par="BTCUSDT", intervalo="15m", limite=200, mercado="spot"):
     par = par.upper().strip()
     if par.endswith(".P"):
         par = par[:-2]
 
-    url_spot = "https://api.binance.com/api/v3/klines"
     params = {"symbol": par, "interval": intervalo, "limit": limite}
-
-    try:
-        dados = _fazer_requisicao(url_spot, params)
-    except Exception:
-        url_futuros = "https://fapi.binance.com/fapi/v1/klines"
-        dados = _fazer_requisicao(url_futuros, params)
+    dados = _fazer_requisicao(_url_por_mercado(mercado), params)
 
     if not dados or not isinstance(dados, list):
         raise ValueError(f"Dados invalidos para {par}. Verifique se o par existe na Binance.")
@@ -74,13 +78,14 @@ def buscar_candles(par="BTCUSDT", intervalo="15m", limite=200):
     return df
 
 
-def buscar_historico(par, intervalo, total_candles, end_time=None):
+def buscar_historico(par, intervalo, total_candles, end_time=None, mercado="spot"):
     par = par.upper().strip()
     if par.endswith(".P"):
         par = par[:-2]
 
     todos_candles = []
     restante = total_candles
+    url = _url_por_mercado(mercado)
 
     while restante > 0:
         bloco = min(restante, 1000)
@@ -88,12 +93,7 @@ def buscar_historico(par, intervalo, total_candles, end_time=None):
         if end_time:
             params["endTime"] = end_time
 
-        url = "https://api.binance.com/api/v3/klines"
-        try:
-            dados = _fazer_requisicao(url, params)
-        except Exception:
-            url = "https://fapi.binance.com/fapi/v1/klines"
-            dados = _fazer_requisicao(url, params)
+        dados = _fazer_requisicao(url, params)
 
         if not dados:
             break

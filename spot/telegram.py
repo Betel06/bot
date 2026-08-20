@@ -41,22 +41,58 @@ def enviar_mensagem(texto):
         "chat_id": chat_id,
         "text": texto,
     }
-
     try:
         resposta = requests.post(url, json=payload, timeout=10)
         if resposta.status_code == 200:
-            return True, "OK"
+            data = resposta.json()
+            return True, data.get("result", {}).get("message_id")
         else:
             return False, "Erro {}".format(resposta.status_code)
     except Exception as e:
         return False, str(e)
 
 
+def editar_mensagem(message_id, texto):
+    token, chat_id = carregar_config()
+    if not token or not chat_id:
+        return False, "Telegram nao configurado"
+
+    url = "https://api.telegram.org/bot{}/editMessageText".format(token)
+    payload = {"chat_id": chat_id, "message_id": message_id, "text": texto}
+
+    try:
+        resposta = requests.post(url, json=payload, timeout=10)
+        if resposta.status_code == 200:
+            return True, "OK"
+        return False, "Erro {}".format(resposta.status_code)
+    except Exception as e:
+        return False, str(e)
+
+
+def fixar_mensagem(message_id):
+    token, chat_id = carregar_config()
+    if not token or not chat_id:
+        return False, "Telegram nao configurado"
+
+    url = "https://api.telegram.org/bot{}/pinChatMessage".format(token)
+    payload = {"chat_id": chat_id, "message_id": message_id}
+
+    try:
+        resposta = requests.post(url, json=payload, timeout=10)
+        if resposta.status_code == 200:
+            return True, "OK"
+        return False, "Erro {}".format(resposta.status_code)
+    except Exception as e:
+        return False, str(e)
+
+
 def formatar_sinal(sinal):
     if sinal["sinal"] == "COMPRA":
-        tag = "COMPRA"
+        tag = "COMPRA 🔼"
+        emoji = "🟩"
     else:
-        tag = "VENDA"
+        tag = "VENDA 🔽"
+        emoji = "🟥"
 
     preco = float(sinal["preco"])
     rsi = float(sinal["rsi"])
@@ -64,27 +100,29 @@ def formatar_sinal(sinal):
     alvo = float(sinal["alvo"])
 
     texto = (
-        "* {} {}*\n"
+        "{0}{0}{0} TRADER SPOT {0}{0}{0}\n"
+        "🟢📈 COMPRA E VENDA - SPOT 📈🟢\n"
+        "----------------------------\n"
         "\n"
-        "Preco: ${:.6f}\n"
-        "RSI: {:.1f}\n"
-        "Tendencia: {}\n"
+        "{1} {2} {3}\n"
         "\n"
-        "ENTRADA: ${:.6f}\n"
-        "STOP LOSS: ${:.6f}\n"
-        "TAKE PROFIT: ${:.6f}\n"
+        "Preco: ${4:.6f}\n"
+        "Forca do sinal: {5:.1f}\n"
+        "Tendencia: {6}\n"
         "\n"
-        "Motivo: {}\n"
+        "🎯 ALVO: ${7:.6f}\n"
+        "🛑 STOP: ${8:.6f}\n"
+        "\n"
+        "📖 Leitura: {9}\n"
         "\n"
         "Gerencie seu risco!"
     ).format(
-        tag, sinal["par"],
+        "🟢", emoji, tag, sinal["par"],
         preco,
         rsi,
         sinal["tendencia"],
-        preco,
-        stop,
         alvo,
+        stop,
         sinal["motivo"],
     )
     return texto

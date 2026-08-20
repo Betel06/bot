@@ -1,7 +1,7 @@
 """
 Cerebro de IA para decisoes de trading (SMC).
-Recebe dados multi-timeframe da Binance, aplica o framework SMC via LLM
-(Gemini) e retorna um sinal estruturado com raciocinio.
+Recebe dados multi-timeframe da Binance (spot ou futuros), aplica o framework
+SMC via LLM (Gemini) e retorna um sinal estruturado com raciocinio.
 
 Env vars:
     AI_ENABLED=1          -> ativa o cerebro
@@ -21,6 +21,21 @@ from core.dados import buscar_historico
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 MODELO = os.environ.get("AI_MODEL", "gemini-3.5-flash")
+
+LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+
+# Timeframes por mercado: futuros = day trade rapido; spot = swing multi-TF
+TFS_POR_MERCADO = {
+    "spot": (("4h", 40), ("1h", 50), ("15m", 60)),
+    "futuros": (("1h", 40), ("15m", 50), ("5m", 60)),
+}
+
+PROMPT_FUTUROS = """
+CONTEXTO DA OPERACAO: voce opera FUTUROS de cripto em DAY TRADE (ciclos rapidos, posicoes de minutos a poucas horas).
+- Long e Short sao igualmente naturais: opere os dois lados conforme a estrutura.
+- Velocidade importa: priorize o que acontece no 15m/5m, usando o 1h so como direcao geral.
+- Disciplina de risco e inegociavel: sem alavancagem alta sem confluencia; se o R:R minimo nao aparecer, NADA.
+""".strip()
 
 # ---------------------------------------------------------------------------
 # CONHECIMENTO SMC condensado (fonte: docs/smc_knowledge.md - Azvdou/ICT)
@@ -67,13 +82,14 @@ def _fmt_candles(df, n):
     return "\n".join(linhas)
 
 
-def coletar_contexto(par):
+def coletar_contexto(par, mercado="spot"):
     """Monta o contexto multi-timeframe compacto de um par."""
-    partes = ["PAR: {}".format(par)]
+    partes = ["PAR: {} ({})".format(par, mercado.upper())]
+    tfs = TFS_POR_MERCADO.get(mercado, TFS_POR_MERCADO["spot"])
 
-    for tf, n in (("4h", 40), ("1h", 50), ("15m", 60)):
+    for tf, n in tfs:
         try:
-            df = buscar_historico(par, tf, n)
+            df = buscar_historico(par, tf, n, mercado=mercado)
             if df is None or len(df) == 0:
                 continue
             partes.append("\n=== CANDLES {} (mais recentes por ultimo) ===".format(tf))
@@ -152,51 +168,62 @@ def _chamar_gemini(prompt):
     return texto, None
 
 
-LOG_IA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "ai_decisions.jsonl")
+LOG_IA = os.path.join(LOG_DIR, "ai_decisions.jsonl")
 
 
-def _registrar(par, resultado_bruto, final, erro):
+def _arquivo_log(mercado):
+    if mercado == "futuros":
+        return os.path.join(LOG_DIR, "ai_decisions_futuro.jsonl")
+    return LOG_IA
+
+
+def _registrar(par, resultado_bruto, final, erro, mercado="spot"):
     try:
-        os.makedirs(os.path.dirname(LOG_IA), exist_ok=True)
+        caminho = _arquivo_log(mercado)
+        os.makedirs(os.path.dirname(caminho), exist_ok=True)
         registro = {
             "data": datetime.now().strftime("%d/%m %H:%M:%S"),
+            "mercado": mercado,
             "par": par,
             "erro": erro,
             "decisao_final": final,
             "resposta_bruta": (resultado_bruto or "")[:2000],
         }
-        with open(LOG_IA, "a", encoding="utf-8") as f:
+        with open(caminho, "a", encoding="utf-8") as f:
             f.write(json.dumps(registro, ensure_ascii=False) + "\n")
     except Exception:
         pass
 
 
-def analisar_com_ia(par):
+def analisar_com_ia(par, mercado="spot"):
     """
-    Retorna dict no mesmo formato de spot.strategy.analisar():
+    Retorna dict no formato de sinal do monitor:
     {"sinal": "COMPRA"/"VENDA", "preco", "stop", "alvo", "rsi", "tendencia", "motivo"}
     ou None se nao ha sinal / houve erro.
     """
     try:
-        contexto = coletar_contexto(par)
-        prompt = PROMPT_SISTEMA + "\n\nDADOS DE MERCADO:\n" + contexto
+        contexto = coletar_contexto(par, mercado)
+        prompt = PROMPT_SISTEMA
+        if mercado in ("futuros", "futuro"):
+            prompt += "\n" + PROMPT_FUTUROS
+        prompt += "\n\nDADOS DE MERCADO:\n" + contexto
         bruto, erro_api = _chamar_gemini(prompt)
 
         if erro_api:
             logging.error("[IA] {} erro api: {}".format(par, erro_api))
-            _registrar(par, None, None, erro_api)
+            _registrar(par, None, None, erro_api, mercado)
             return None
 
         try:
             decisao = json.loads(bruto)
         except json.JSONDecodeError:
             logging.error("[IA] {} json invalido".format(par))
-            _registrar(par, bruto, None, "json invalido")
+            _registrar(par, bruto, None, "json invalido", mercado)
             return None
 
         preco_ref = 0.0
         try:
-            df = buscar_historico(par, "1m", 2)
+            df = buscar_historico(par, "1m", 2, mercado=mercado)
             preco_ref = float(df["close"].iloc[-1])
         except Exception:
             pass
@@ -204,10 +231,10 @@ def analisar_com_ia(par):
         final, erro_val = _validar(decisao, preco_ref)
         if erro_val:
             logging.info("[IA] {} descartado: {}".format(par, erro_val))
-            _registrar(par, bruto, None, erro_val)
+            _registrar(par, bruto, None, erro_val, mercado)
             return None
 
-        _registrar(par, bruto, final, None)
+        _registrar(par, bruto, final, None, mercado)
 
         if final["sinal"] == "NADA":
             return None

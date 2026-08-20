@@ -32,22 +32,19 @@ logging.getLogger().addHandler(_bufh)
 
 from spot.config import PARES, STOP_PCT, ROI_TABELA, INTERVALO_MONITOR
 from spot.strategy import analisar
-from spot.telegram import carregar_config, enviar_mensagem, formatar_sinal
+from spot.telegram import carregar_config, enviar_mensagem, editar_mensagem, fixar_mensagem, formatar_sinal
 from core.dados import buscar_historico
-
-try:
-    from spot.ai_brain import analisar_com_ia, ia_ativa
-except Exception:
-    analisar_com_ia = None
-    ia_ativa = lambda: False
 
 
 POSICOES_FILE = os.path.join(BOT_DIR, "logs", "posicoes.json")
 RESULTADOS_FILE = os.path.join(BOT_DIR, "logs", "resultados.json")
+TABELA_FILE = os.path.join(BOT_DIR, "logs", "tabela_msg.json")
+
+ENTRADA_USD = float(os.environ.get("SPOT_ENTRADA", "1.0"))
+FUTURO_URL = os.environ.get("FUTURO_URL", "https://bot-futuro.onrender.com")
 
 ESTADO = {
-    "modo": "-",
-    "modelo": os.environ.get("AI_MODEL", "gemini-3.5-flash"),
+    "modo": "RSI",
     "ultima_rodada": None,
     "sinais_gerados": 0,
 }
@@ -87,28 +84,30 @@ def salvar_resultados(resultados):
 
 def formatar_resultado(res):
     if res["tipo"] == "TAKE PROFIT":
-        tag = "WIN"
+        tag = "WIN ✅"
+        emoji = "🟢🟢"
     else:
-        tag = "LOSS"
+        tag = "LOSS ❌"
+        emoji = "🟢🔴"
 
     texto = (
-        "* {} {}*\n"
+        "{0} TRADER SPOT | {1}\n"
+        "----------------------------\n"
         "\n"
-        "Par: {}\n"
-        "Direcao: {}\n"
-        "Entrada: ${:.6f}\n"
-        "Saida: ${:.6f}\n"
+        "Par: {2} ({3})\n"
+        "Entrada: ${4:.6f}\n"
+        "Saida: ${5:.6f}\n"
         "\n"
-        "Resultado: {} ({:+.2f}%)\n"
-        "Lucro/Perda: ${:+.4f}\n"
+        "Resultado: {6} ({7:+.2f}%)\n"
+        "P/L: ${8:+.2f}\n"
     ).format(
-        tag, res["tipo"], res["par"],
-        res["direcao"],
-        res["entrada"],
-        res["preco_saida"],
+        emoji, tag,
+        res["par"], res["direcao"],
+        float(res["entrada"]),
+        float(res["preco_saida"]),
         res["tipo"],
-        res["lucro_pct"],
-        res["lucro_usd"],
+        float(res["lucro_pct"]),
+        float(res["lucro_usd"]),
     )
     return texto
 
@@ -129,12 +128,12 @@ def checar_posicoes(posicoes_abertas):
                 if preco_baixa <= pos["stop"]:
                     lucro = (pos["stop"] - pos["entrada"]) / pos["entrada"]
                     resultado.append({**pos, "tipo": "STOP LOSS", "preco_saida": pos["stop"],
-                                     "lucro_pct": lucro * 100, "lucro_usd": lucro})
+                                     "lucro_pct": lucro * 100, "lucro_usd": lucro * ENTRADA_USD})
                     posicoes_abertas.remove(pos)
                 elif preco_alta >= pos["alvo"]:
                     lucro = (pos["alvo"] - pos["entrada"]) / pos["entrada"]
                     resultado.append({**pos, "tipo": "TAKE PROFIT", "preco_saida": pos["alvo"],
-                                     "lucro_pct": lucro * 100, "lucro_usd": lucro})
+                                     "lucro_pct": lucro * 100, "lucro_usd": lucro * ENTRADA_USD})
                     posicoes_abertas.remove(pos)
 
             pos["preco_atual"] = preco_atual
@@ -145,21 +144,96 @@ def checar_posicoes(posicoes_abertas):
 
 
 def checar_sinais():
-    usar_ia = analisar_com_ia is not None and ia_ativa()
-    ESTADO["modo"] = "IA" if usar_ia else "RSI"
+    ESTADO["modo"] = "RSI"
     sinais = []
     for par in PARES:
         try:
-            if usar_ia:
-                r = analisar_com_ia(par)
-            else:
-                r = analisar(par)
+            r = analisar(par)
             if r and r["sinal"]:
                 sinais.append(r)
         except Exception:
             pass
         time.sleep(0.3)
     return sinais
+
+
+def montar_tabela(resultados_proprios):
+    """Monta o painel combinado dos dois bots (spot + futuro)."""
+    r = resultados_proprios
+    linhas = [
+        "📊 PAINEL DOS TRADERS 📊",
+        "═══════════════════════════",
+        "🟢 TRADER SPOT",
+        "Wins: {} | Losses: {}".format(r["wins"], r["losses"]),
+        "Entrada: ${:.2f} | P/L: ${:+.2f}".format(ENTRADA_USD, r.get("total_lucro", 0.0)),
+    ]
+
+    try:
+        fut = requests.get(FUTURO_URL.rstrip("/") + "/status", timeout=10).json()
+        if fut.get("status") == "online":
+            linhas += [
+                "───────────────────────────",
+                "🔵 TRADER FUTURO ⚡ (IA)",
+                "Wins: {} | Losses: {}".format(fut.get("wins", 0), fut.get("losses", 0)),
+                "Entrada: ${:.2f} | P/L: ${:+.2f}".format(
+                    float(fut.get("entrada_usd", 0)), float(fut.get("pl_usd", 0))),
+            ]
+        else:
+            raise ValueError("offline")
+    except Exception:
+        linhas += [
+            "───────────────────────────",
+            "🔵 TRADER FUTURO ⚡ (IA)",
+            "Status: offline/iniciando...",
+        ]
+
+    linhas.append("═══════════════════════════")
+    return "\n".join(linhas)
+
+
+def atualizar_tabela(resultados_proprios):
+    """Cria ou edita a mensagem fixada com o painel dos dois bots."""
+    try:
+        texto = montar_tabela(resultados_proprios)
+        estado_tabela = carregar_posicoes_arquivo(TABELA_FILE, {})
+
+        if estado_tabela.get("texto") == texto and estado_tabela.get("message_id"):
+            return
+
+        mid = estado_tabela.get("message_id")
+        if mid:
+            ok, _ = editar_mensagem(mid, texto)
+            if not ok:
+                ok_novo, novo = enviar_mensagem(texto)
+                if ok_novo:
+                    fixar_mensagem(novo)
+                    mid = novo
+        else:
+            ok, novo = enviar_mensagem(texto)
+            if ok:
+                fixar_mensagem(novo)
+                mid = novo
+
+        if mid:
+            salvar_json_arquivo(TABELA_FILE, {"message_id": mid, "texto": texto})
+    except Exception as e:
+        logging.error("[TABELA] falha: {}".format(e))
+
+
+def carregar_posicoes_arquivo(caminho, padrao):
+    try:
+        if os.path.exists(caminho):
+            with open(caminho, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return padrao
+
+
+def salvar_json_arquivo(caminho, dados):
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    with open(caminho, "w") as f:
+        json.dump(dados, f, indent=2)
 
 
 def monitor_loop():
@@ -173,20 +247,12 @@ def monitor_loop():
 
     if telegram_ok:
         try:
-            enviar_mensagem("[BOT] Monitor ONLINE no Render 24/7!")
+            enviar_mensagem("🟢 TRADER SPOT ONLINE no Render 24/7!\nEstrategia RSI em ATOM, UNI, ADA, LINK e XRP.")
         except Exception as e:
             logging.error("[TELEGRAM] falha no startup: {}".format(e))
 
     rodada = 0
-
     intervalo = INTERVALO_MONITOR
-    try:
-        if ia_ativa():
-            intervalo = int(os.environ.get("AI_INTERVALO", "900"))
-            logging.info("[IA] cerebro ATIVO (modelo {}), rodada a cada {}s".format(
-                os.environ.get("AI_MODEL", "gemini-3.5-flash"), intervalo))
-    except Exception:
-        pass
 
     while True:
         rodada += 1
@@ -240,7 +306,10 @@ def monitor_loop():
             salvar_posicoes(posicoes_abertas)
             salvar_resultados(resultados)
 
-            logging.info("[Rodada {}] {}W {}L | ${:+.4f} | {} posicoes abertas".format(
+            if telegram_ok:
+                atualizar_tabela(resultados)
+
+            logging.info("[Rodada {}] {}W {}L | ${:+.2f} | {} posicoes abertas".format(
                 rodada, resultados["wins"], resultados["losses"], resultados["total_lucro"],
                 len(posicoes_abertas)))
 
@@ -267,10 +336,8 @@ if __name__ == "__main__":
 
     @app.route("/")
     def hello_world():
-        return "Bot Spot Online! Rodando 24/7. Wins: {} | Losses: {}".format(
-            carregar_resultados()["wins"],
-            carregar_resultados()["losses"]
-        )
+        r = carregar_resultados()
+        return "Trader Spot Online! RSI 24/7. Wins: {} | Losses: {}".format(r["wins"], r["losses"])
 
     @app.route("/health")
     def health():
@@ -281,12 +348,14 @@ if __name__ == "__main__":
         r = carregar_resultados()
         p = carregar_posicoes()
         return {
+            "bot": "spot",
             "status": "online",
             "wins": r["wins"],
             "losses": r["losses"],
-            "lucro": r["total_lucro"],
+            "entrada_usd": ENTRADA_USD,
+            "pl_usd": round(r["total_lucro"], 4),
             "posicoes_abertas": len(p),
-            "ia": ESTADO,
+            "monitor": ESTADO,
         }
 
     @app.route("/debug")
