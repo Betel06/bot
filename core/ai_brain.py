@@ -49,19 +49,25 @@ CONTEXTO DA OPERACAO: voce opera FUTUROS de cripto em DAY TRADE (ciclos rapidos,
 PROMPT_SISTEMA = """Voce e um trader profissional de day trade especialista em Smart Money Concepts (SMC/ICT).
 Analise os dados de mercado fornecidos e decida se ha uma operacao de ALTA qualidade agora.
 
-FRAMEWORK DE ANALISE (nesta ordem):
+SUA AUTONOMIA:
+- Voce e a AUTORIDADE FINAL da decisao. Nenhum filtro externo vai revisar ou vetar o seu sinal.
+- Use TUDO o que voce sabe: estrutura, liquidez, sweeps, OB/FVG, premium/discount, PO3,
+  killzones, volatilidade, contexto de ciclo, comportamento de preco — sua experiencia completa.
+- Voce define entrada, stop e alvo como um trader real: stop onde a tese morre, alvo na liquidez oposta.
+- Se a operacao nao fizer sentido para voce, NADA e a resposta certa. Se fizer, execute com conviccao.
+- Porem lembre-se: cada decisao fica registrada em auditoria. Liberdade total exige disciplina total.
+
+FRAMEWORK DE ANALISE (referencia, nao amarra):
 1. ESTRUTURA: identifique HH/HL (alta) ou LH/LL (baixa) em cada timeframe. Ultimo evento foi BOS (continuacao) ou CHoCH/MSS (reversao)?
-2. LIQUIDEZ: onde estao os stops? Equal highs/lows, topos/fundos recentes (BSL acima, SSL abaixo). Houve SWEEP recente (pavio capturou stops e reverteu)?
-3. ZONAS: existe OB valido (ultima vela oposta ANTES de impulso com displacement que causou BOS) ou FVG (gap de 3 velas) nao mitigado perto do preco?
-4. PREMIUM/DISCOUNT: preco esta na metade inferior (discount = compra ok) ou superior (premium = venda ok) do range atual?
-5. CONFLUENCIA: os melhores trades tem 3+ fatores: sweep + zona (OB/FVG) + alinhamento com estrutura maior + confirmacao de reversao.
-6. GESTAO: so proponha trade com risco/retorno minimo 1:2. Stop vai ALEM da zona/sweep (nao arbitrario). Alvo = liquidez oposta mais proxima.
+2. LIQUIDEZ: onde estao os stops? Equal highs/lows, topos/fundos recentes (BSL acima, SSL abaixo). Houve SWEEP recente?
+3. ZONAS: existe OB valido ou FVG nao mitigado perto do preco?
+4. PREMIUM/DISCOUNT: preco esta na metade inferior (discount) ou superior (premium) do range atual?
+5. CONFLUENCIA: os melhores trades tem 3+ fatores alinhados.
+6. GESTAO: risco/retorno faz parte das suas habilidades — aplique-o como achar correto.
 
 REGRAS CRITICAS:
-- Estrutura do timeframe MAIOR manda. Nunca compre contra tendencia de 4h forte.
-- SEM confluencia clara = sinal NADA. Ficar de fora e uma decisao valida e frequente (trader profissional opera pouco).
+- Estrutura do timeframe MAIOR manda na direcao geral.
 - NUNCA invente niveis: use precos reais dos candles fornecidos.
-- Voce esta sendo auditado: cada decisao fica registrada. Prefira precisao a quantidade.
 
 RESPONDA APENAS COM JSON VALIDO neste formato exato:
 {
@@ -106,7 +112,10 @@ def coletar_contexto(par, mercado="spot"):
 
 
 def _validar(decisao, preco_ref):
-    """Valida sanidade da decisao. Retorna (decisao_ok, erro_ou_none)."""
+    """
+    Sanidade estrutural minima (nao veto de estrategia — a IA e a autoridade).
+    Retorna (decisao_ok, erro_ou_none).
+    """
     if not isinstance(decisao, dict):
         return None, "resposta nao e um objeto"
     sinal = str(decisao.get("sinal", "")).upper().strip()
@@ -127,6 +136,7 @@ def _validar(decisao, preco_ref):
     if preco <= 0:
         return None, "preco <= 0"
 
+    # Sanidade direcional apenas: os niveis tem que fazer sentido geometricamente.
     if sinal == "COMPRA":
         if not (0 < stop < preco < alvo):
             return None, "niveis inconsistentes p/ COMPRA (precisa stop<preco<alvo)"
@@ -136,16 +146,12 @@ def _validar(decisao, preco_ref):
 
     risco = abs(preco - stop)
     retorno = abs(alvo - preco)
-    if risco <= 0:
-        return None, "risco zero"
-    rr = retorno / risco
-    if rr < 1.5:
-        return None, "R:R {:.2f} abaixo do minimo 1.5".format(rr)
+    rr = retorno / risco if risco > 0 else 0.0
+    decisao["rr"] = round(rr, 2)
 
     decisao["preco"] = preco
     decisao["stop"] = stop
     decisao["alvo"] = alvo
-    decisao["rr"] = round(rr, 2)
     return decisao, None
 
 
@@ -277,6 +283,10 @@ def analisar_com_ia(par, mercado="spot"):
 
         if final["sinal"] == "NADA":
             return None
+
+        if float(final.get("rr") or 0) < 1.5:
+            logging.warning("[IA] {} aceito por julgamento da IA com R:R {}".format(
+                par, final.get("rr")))
 
         logging.info("[IA] SINAL {} {} conf={} rr={} | {}".format(
             final["sinal"], par, final.get("confianca"), final.get("rr"),
