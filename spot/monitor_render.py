@@ -30,7 +30,7 @@ _bufh = _BufferHandler()
 _bufh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logging.getLogger().addHandler(_bufh)
 
-from spot.config import PARES, STOP_PCT, ROI_TABELA
+from spot.config import PARES, STOP_PCT, ROI_TABELA, INTERVALO_MONITOR
 from spot.strategy import analisar
 from spot.telegram import carregar_config, enviar_mensagem, formatar_sinal
 from core.dados import buscar_historico
