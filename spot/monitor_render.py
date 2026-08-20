@@ -6,6 +6,8 @@ import threading
 import logging
 from datetime import datetime
 
+import requests
+
 BOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BOT_DIR)
 os.chdir(BOT_DIR)
@@ -200,6 +202,16 @@ def monitor_loop():
         time.sleep(300)
 
 
+def keep_alive_loop():
+    url = os.environ.get("RENDER_EXTERNAL_URL") or ("http://127.0.0.1:" + os.environ.get("PORT", "5000"))
+    while True:
+        try:
+            requests.get(url.rstrip("/") + "/health", timeout=30)
+        except Exception:
+            pass
+        time.sleep(600)
+
+
 if __name__ == "__main__":
     from flask import Flask
 
@@ -230,6 +242,9 @@ if __name__ == "__main__":
 
     monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
     monitor_thread.start()
+
+    ping_thread = threading.Thread(target=keep_alive_loop, daemon=True)
+    ping_thread.start()
 
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
