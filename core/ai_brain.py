@@ -11,6 +11,7 @@ Env vars:
 
 import os
 import json
+import time
 import logging
 from datetime import datetime
 
@@ -20,7 +21,11 @@ from core.dados import buscar_historico
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-MODELO = os.environ.get("AI_MODEL", "gemini-3.5-flash")
+# Cadeia de modelos: cota diaria e POR MODELO; se um esgotar, usa o proximo.
+MODELOS = [m.strip() for m in os.environ.get(
+    "AI_MODELS", "gemini-3.6-flash,gemini-3.5-flash-lite").split(",") if m.strip()]
+MODELO = os.environ.get("AI_MODEL", MODELOS[0])
+_MODELO_ATIVO = None
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
 
@@ -148,7 +153,7 @@ def _chamar_gemini(prompt):
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
         return None, "GEMINI_API_KEY nao configurada"
-    url = GEMINI_URL.format(model=MODELO)
+
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
@@ -157,15 +162,49 @@ def _chamar_gemini(prompt):
             "maxOutputTokens": 8192,
         },
     }
-    resp = requests.post(url, json=body, timeout=60, headers={"x-goog-api-key": key})
-    if resp.status_code != 200:
-        return None, "HTTP {}: {}".format(resp.status_code, resp.text[:300])
-    data = resp.json()
-    try:
-        texto = data["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError):
-        return None, "resposta sem texto: {}".format(json.dumps(data)[:300])
-    return texto, None
+
+    global _MODELO_ATIVO
+    ordem = list(MODELOS)
+    if _MODELO_ATIVO and _MODELO_ATIVO in ordem:
+        ordem.remove(_MODELO_ATIVO)
+        ordem.insert(0, _MODELO_ATIVO)
+
+    ultimo_erro = "nenhum modelo tentado"
+    for modelo in ordem:
+        url = GEMINI_URL.format(model=modelo)
+        for tentativa in range(2):
+            try:
+                resp = requests.post(url, json=body, timeout=60, headers={"x-goog-api-key": key})
+            except Exception as e:
+                ultimo_erro = "{}: {}".format(modelo, e)
+                break
+
+            if resp.status_code == 200:
+                _MODELO_ATIVO = modelo
+                data = resp.json()
+                try:
+                    texto = data["candidates"][0]["content"]["parts"][0]["text"]
+                except (KeyError, IndexError):
+                    return None, "resposta sem texto: {}".format(json.dumps(data)[:300])
+                return texto, None
+
+            if resp.status_code == 429:
+                delay = 20
+                try:
+                    rd = resp.json().get("error", {}).get("details", [])
+                    for d in rd:
+                        if d.get("@type", "").endswith("RetryInfo"):
+                            delay = min(int(float(d.get("retryDelay", "20s").rstrip("s"))) + 2, 60)
+                except Exception:
+                    pass
+                logging.warning("[IA] {} 429 (tentativa {}), aguardando {}s".format(modelo, tentativa + 1, delay))
+                time.sleep(delay)
+                continue
+
+            ultimo_erro = "{}: HTTP {}: {}".format(modelo, resp.status_code, resp.text[:200])
+            break
+
+    return None, ultimo_erro
 
 
 LOG_IA = os.path.join(LOG_DIR, "ai_decisions.jsonl")
