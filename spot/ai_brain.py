@@ -6,7 +6,7 @@ Recebe dados multi-timeframe da Binance, aplica o framework SMC via LLM
 Env vars:
     AI_ENABLED=1          -> ativa o cerebro
     GEMINI_API_KEY=...    -> chave da API (aistudio.google.com)
-    AI_MODEL=...          -> default: gemini-2.5-flash
+    AI_MODEL=...          -> default: gemini-3.5-flash
 """
 
 import os
@@ -18,9 +18,9 @@ import requests
 
 from core.dados import buscar_historico
 
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-MODELO = os.environ.get("AI_MODEL", "gemini-2.5-flash")
+MODELO = os.environ.get("AI_MODEL", "gemini-3.5-flash")
 
 # ---------------------------------------------------------------------------
 # CONHECIMENTO SMC condensado (fonte: docs/smc_knowledge.md - Azvdou/ICT)
@@ -132,16 +132,16 @@ def _chamar_gemini(prompt):
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
         return None, "GEMINI_API_KEY nao configurada"
-    url = GEMINI_URL.format(model=MODELO, key=key)
+    url = GEMINI_URL.format(model=MODELO)
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "responseMimeType": "application/json",
             "temperature": 0.2,
-            "maxOutputTokens": 1024,
+            "maxOutputTokens": 8192,
         },
     }
-    resp = requests.post(url, json=body, timeout=60)
+    resp = requests.post(url, json=body, timeout=60, headers={"x-goog-api-key": key})
     if resp.status_code != 200:
         return None, "HTTP {}: {}".format(resp.status_code, resp.text[:300])
     data = resp.json()

@@ -157,7 +157,7 @@ def monitor_loop():
         if ia_ativa():
             intervalo = int(os.environ.get("AI_INTERVALO", "900"))
             logging.info("[IA] cerebro ATIVO (modelo {}), rodada a cada {}s".format(
-                os.environ.get("AI_MODEL", "gemini-2.5-flash"), intervalo))
+                os.environ.get("AI_MODEL", "gemini-3.5-flash"), intervalo))
     except Exception:
         pass
 
