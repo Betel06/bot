@@ -370,6 +370,26 @@ if __name__ == "__main__":
             "logs": list(LOG_BUFFER)[-80:],
         }
 
+    @app.route("/pares")
+    def pares():
+        dados = []
+        for par in PARES:
+            try:
+                r = analisar(par)
+                if r:
+                    dados.append({
+                        "par": par.replace("USDT", ""),
+                        "preco": round(r["preco"], 6),
+                        "rsi": round(r["rsi"], 1),
+                        "tendencia": r["tendencia"],
+                        "sinal": r["sinal"] or "-",
+                    })
+            except Exception:
+                dados.append({"par": par, "erro": True})
+        return {"bot": "spot",
+                "regra": "COMPRA: RSI<40 + ALTA | VENDA: RSI>70 + BAIXA",
+                "pares": dados}
+
     global MONITOR_THREAD
     MONITOR_THREAD = threading.Thread(target=monitor_loop, daemon=True)
     MONITOR_THREAD.start()

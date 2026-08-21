@@ -287,6 +287,24 @@ def criar_app():
             "logs": list(LOG_BUFFER)[-80:],
         }
 
+    @app.route("/audit")
+    def audit():
+        arquivo = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "..", "logs", "ai_decisions_futuro.jsonl")
+        itens = []
+        try:
+            with open(arquivo, encoding="utf-8") as f:
+                for ln in f.readlines()[-20:]:
+                    ln = ln.strip()
+                    if ln:
+                        try:
+                            itens.append(json.loads(ln))
+                        except Exception:
+                            pass
+        except FileNotFoundError:
+            pass
+        return {"total": len(itens), "decisoes": itens}
+
     MONITOR_THREAD = threading.Thread(target=monitor_loop, daemon=True)
     MONITOR_THREAD.start()
 
