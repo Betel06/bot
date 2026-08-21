@@ -151,8 +151,8 @@ def checar_sinais():
             r = analisar(par)
             if r and r["sinal"]:
                 sinais.append(r)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error("[RSI] {} falhou na rodada: {}".format(par, str(e)[:120]))
         time.sleep(0.3)
     return sinais
 
