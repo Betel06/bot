@@ -278,12 +278,45 @@ def salvar_json_arquivo(caminho, dados):
         json.dump(dados, f, indent=2)
 
 
+def restaurar_do_remoto():
+    """Restaura posicoes/resultados/tabela do estado salvo no GitHub."""
+    try:
+        from core.persist import carregar_estado
+        secao = (carregar_estado() or {}).get("spot")
+        if not isinstance(secao, dict):
+            return
+        if not os.path.exists(POSICOES_FILE) and isinstance(secao.get("posicoes"), list):
+            salvar_json_arquivo(POSICOES_FILE, secao["posicoes"])
+        if not os.path.exists(RESULTADOS_FILE) and isinstance(secao.get("resultados"), dict):
+            salvar_json_arquivo(RESULTADOS_FILE, secao["resultados"])
+        if not os.path.exists(TABELA_FILE) and isinstance(secao.get("tabela"), dict):
+            salvar_json_arquivo(TABELA_FILE, secao["tabela"])
+        logging.info("[PERSIST] estado do spot restaurado do GitHub")
+    except Exception as e:
+        logging.warning("[PERSIST] restauracao falhou: {}".format(e))
+
+
+def sincronizar_remoto(posicoes, resultados):
+    """Salva estado atual do spot no GitHub (posicoes + resultados + tabela)."""
+    try:
+        from core.persist import salvar_secao
+        copia = dict(resultados)
+        copia["historico"] = list(resultados.get("historico", []))[-100:]
+        salvar_secao("spot", {"posicoes": posicoes, "resultados": copia})
+        tabela = carregar_posicoes_arquivo(TABELA_FILE, {})
+        if tabela.get("message_id"):
+            salvar_secao("tabela", tabela)
+    except Exception:
+        pass
+
+
 def monitor_loop():
     time.sleep(10)
 
     token, chat_id = carregar_config()
     telegram_ok = token is not None and chat_id is not None
 
+    restaurar_do_remoto()
     posicoes_abertas = carregar_posicoes()
     resultados = carregar_resultados()
 
@@ -327,10 +360,12 @@ def monitor_loop():
             ESTADO["ultima_rodada"] = agora.strftime("%d/%m %H:%M:%S")
             ESTADO["sinais_gerados"] += len(sinais)
 
+            abriu_posicao = False
             for s in sinais:
                 ja_aberto = any(p["par"] == s["par"] for p in posicoes_abertas)
 
                 if not ja_aberto:
+                    abriu_posicao = True
                     posicoes_abertas.append({
                         "par": s["par"],
                         "direcao": s["sinal"],
@@ -351,6 +386,9 @@ def monitor_loop():
 
             if telegram_ok:
                 atualizar_tabela(resultados)
+
+            if novos_resultados or abriu_posicao:
+                sincronizar_remoto(posicoes_abertas, resultados)
 
             logging.info("[Rodada {}] {}W {}L | ${:+.2f} | {} posicoes abertas".format(
                 rodada, resultados["wins"], resultados["losses"], resultados["total_lucro"],
