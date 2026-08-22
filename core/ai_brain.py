@@ -293,6 +293,7 @@ def analisar_com_ia(par, mercado="spot"):
             str(final.get("motivo"))[:120]))
 
         return {
+            "par": par,
             "sinal": final["sinal"],
             "preco": final["preco"],
             "stop": final["stop"],
