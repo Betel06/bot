@@ -1,1 +1,1 @@
-{"futuro": {"posicoes": [{"par": "SOLUSDT", "direcao": "COMPRA", "entrada": 97.71, "stop": 96.5, "alvo": 99.5, "data": "22/08 04:27", "preco_atual": 97.71}], "resultados": {"wins": 0, "losses": 0, "total_lucro": 0.0, "historico": []}}}
+{"futuro": {"posicoes": [], "resultados": {"wins": 1, "losses": 0, "total_lucro": 0.036639033875754914, "historico": [{"par": "SOLUSDT", "direcao": "COMPRA", "tipo": "TAKE PROFIT", "lucro": 0.036639033875754914, "data": "22/08 04:39"}]}}}
