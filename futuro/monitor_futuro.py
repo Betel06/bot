@@ -170,9 +170,11 @@ def sincronizar_remoto(posicoes, resultados):
         from core.persist import salvar_secao
         copia = dict(resultados)
         copia["historico"] = list(resultados.get("historico", []))[-100:]
-        salvar_secao("futuro", {"posicoes": posicoes, "resultados": copia})
-    except Exception:
-        pass
+        ok = salvar_secao("futuro", {"posicoes": posicoes, "resultados": copia})
+        if not ok:
+            logging.error("[PERSIST] falha ao salvar estado do futuro no GitHub")
+    except Exception as e:
+        logging.error("[PERSIST] excecao ao sincronizar: {}".format(e))
 
 
 def monitor_loop():
@@ -184,6 +186,12 @@ def monitor_loop():
     restaurar_do_remoto()
     posicoes_abertas = carregar_posicoes()
     resultados = carregar_resultados()
+
+    try:
+        from core.persist import configurado
+        logging.info("[PERSIST] persistencia GitHub ativa: {}".format(configurado()))
+    except Exception:
+        pass
 
     if telegram_ok:
         try:
