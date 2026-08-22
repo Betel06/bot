@@ -157,35 +157,77 @@ def checar_sinais():
     return sinais
 
 
+def _linha_operacao(h, tag_bot):
+    emoji = "✅" if h.get("tipo") == "TAKE PROFIT" else "❌"
+    direcao = h.get("direcao") or ""
+    dir_txt = ""
+    if direcao:
+        dir_txt = " {}".format("SHORT" if direcao == "VENDA" else "LONG")
+    return "{} {}{} ${:+.2f} · {} {}".format(
+        emoji, h.get("par", "?"), dir_txt, float(h.get("lucro", 0.0)),
+        h.get("data", "?"), tag_bot)
+
+
 def montar_tabela(resultados_proprios):
     """Monta o painel combinado dos dois bots (spot + futuro)."""
     r = resultados_proprios
+
+    minhas_pos = carregar_posicoes_arquivo(POSICOES_FILE, [])
+    nomes_spot = [p.get("par", "?").replace("USDT", "") for p in minhas_pos][:6]
     linhas = [
         "📊 PAINEL DOS TRADERS 📊",
         "═══════════════════════════",
-        "🟢 TRADER SPOT",
-        "Wins: {} | Losses: {}".format(r["wins"], r["losses"]),
-        "Entrada: ${:.2f} | P/L: ${:+.2f}".format(ENTRADA_USD, r.get("total_lucro", 0.0)),
+        "🟢 SPOT | ${:.2f}/op".format(ENTRADA_USD),
+        "W {} | L {} | P/L ${:+.2f}".format(
+            r["wins"], r["losses"], r.get("total_lucro", 0.0)),
+        "📂 Abertas ({}): {}".format(
+            len(minhas_pos), ", ".join(nomes_spot) if nomes_spot else "-"),
     ]
+
+    ops = []
+    historico_spot = r.get("historico", [])
+    for h in historico_spot[-8:]:
+        try:
+            chave = datetime.strptime(h.get("data", ""), "%d/%m %H:%M")
+        except ValueError:
+            chave = datetime.min
+        ops.append((chave, _linha_operacao(h, "🟢")))
 
     try:
         fut = requests.get(FUTURO_URL.rstrip("/") + "/status", timeout=10).json()
         if fut.get("status") == "online":
+            abertas_fut = fut.get("abertas", []) or []
+            nomes_fut = ["{}{}".format(
+                x.get("par", "?").replace("USDT", ""),
+                "/S" if x.get("direcao") == "VENDA" else "") for x in abertas_fut[:6]]
             linhas += [
                 "───────────────────────────",
-                "🔵 TRADER FUTURO ⚡ (IA)",
-                "Wins: {} | Losses: {}".format(fut.get("wins", 0), fut.get("losses", 0)),
-                "Entrada: ${:.2f} | P/L: ${:+.2f}".format(
-                    float(fut.get("entrada_usd", 0)), float(fut.get("pl_usd", 0))),
+                "🔵 FUTURO ⚡ IA | ${:.2f}/op".format(float(fut.get("entrada_usd", 0))),
+                "W {} | L {} | P/L ${:+.2f}".format(
+                    fut.get("wins", 0), fut.get("losses", 0), float(fut.get("pl_usd", 0))),
+                "📂 Abertas ({}): {}".format(
+                    len(abertas_fut), ", ".join(nomes_fut) if nomes_fut else "-"),
             ]
+            for h in (fut.get("historico") or [])[-8:]:
+                try:
+                    chave = datetime.strptime(h.get("data", ""), "%d/%m %H:%M")
+                except ValueError:
+                    chave = datetime.min
+                ops.append((chave, _linha_operacao(h, "🔵")))
         else:
             raise ValueError("offline")
     except Exception:
         linhas += [
             "───────────────────────────",
-            "🔵 TRADER FUTURO ⚡ (IA)",
-            "Status: offline/iniciando...",
+            "🔵 FUTURO ⚡ IA | offline",
         ]
+
+    if ops:
+        ops.sort(key=lambda t: t[0], reverse=True)
+        linhas.append("───────────────────────────")
+        linhas.append("📜 ÚLTIMAS OPERAÇÕES")
+        for _, linha in ops[:8]:
+            linhas.append(linha)
 
     linhas.append("═══════════════════════════")
     return "\n".join(linhas)
@@ -275,6 +317,7 @@ def monitor_loop():
                 resultados["total_lucro"] += res["lucro_usd"]
                 resultados["historico"].append({
                     "par": res["par"],
+                    "direcao": res.get("direcao", ""),
                     "tipo": res["tipo"],
                     "lucro": res["lucro_usd"],
                     "data": agora.strftime("%d/%m %H:%M"),

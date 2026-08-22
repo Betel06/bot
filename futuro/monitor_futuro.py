@@ -190,6 +190,7 @@ def monitor_loop():
                 resultados["total_lucro"] += res["lucro_usd"]
                 resultados["historico"].append({
                     "par": res["par"],
+                    "direcao": res.get("direcao", ""),
                     "tipo": res["tipo"],
                     "lucro": res["lucro_usd"],
                     "data": agora.strftime("%d/%m %H:%M"),
@@ -272,6 +273,8 @@ def criar_app():
             "entrada_usd": ENTRADA_USD,
             "pl_usd": round(r["total_lucro"], 4),
             "posicoes_abertas": len(p),
+            "abertas": [{"par": x["par"], "direcao": x.get("direcao", "")} for x in p],
+            "historico": r.get("historico", [])[-12:],
             "ia": ESTADO,
         }
 
