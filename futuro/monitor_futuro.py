@@ -15,7 +15,15 @@ os.chdir(BOT_DIR)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-LOG_BUFFER = collections.deque(maxlen=200)
+
+class _FiltroHealth(logging.Filter):
+    def filter(self, record):
+        return "/health" not in record.getMessage()
+
+
+logging.getLogger("werkzeug").addFilter(_FiltroHealth())
+
+LOG_BUFFER = collections.deque(maxlen=2000)
 
 
 class _BufferHandler(logging.Handler):
