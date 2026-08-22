@@ -50,6 +50,7 @@ TABELA_FILE = os.path.join(BOT_DIR, "logs", "tabela_msg.json")
 
 ENTRADA_USD = float(os.environ.get("SPOT_ENTRADA", "1.0"))
 FUTURO_URL = os.environ.get("FUTURO_URL", "https://bot-futuro.onrender.com")
+ENTRADA_FUT_PADRAO = float(os.environ.get("FUTURO_ENTRADA", "2.0"))
 
 ESTADO = {
     "modo": "RSI",
@@ -177,58 +178,103 @@ def _linha_operacao(h, tag_bot):
 
 
 def montar_tabela(resultados_proprios):
-    """Monta o painel combinado dos dois bots (spot + futuro)."""
+    """Monta o painel combinado dos dois bots (spot + futuro).
+    Fonte primaria: historico real do chat no Telegram (via MTProto)."""
     r = resultados_proprios
 
+    tg = None
+    try:
+        from core.tg_history import ler_estado_do_chat
+        tg = ler_estado_do_chat()
+    except Exception as e:
+        logging.warning("[TG] leitura do historico falhou: {}".format(e))
+
     minhas_pos = carregar_posicoes_arquivo(POSICOES_FILE, [])
-    nomes_spot = [p.get("par", "?").replace("USDT", "") for p in minhas_pos][:6]
+    if minhas_pos:
+        pos_spot = [{"par": p.get("par", "?")} for p in minhas_pos]
+    elif tg:
+        pos_spot = [a for a in tg["abertas"] if a["bot"] == "spot"]
+    else:
+        pos_spot = []
+    nomes_spot = [p.get("par", "?").replace("USDT", "") for p in pos_spot][:6]
+
+    if tg:
+        st_spot = tg["spot"]
+        pl_spot = st_spot["pl"]
+        wins_spot = st_spot["wins"]
+        losses_spot = st_spot["losses"]
+    else:
+        pl_spot = r.get("total_lucro", 0.0)
+        wins_spot = r["wins"]
+        losses_spot = r["losses"]
+
     linhas = [
         "📊 PAINEL DOS TRADERS 📊",
         "═══════════════════════════",
         "🟢 SPOT | ${:.2f}/op".format(ENTRADA_USD),
-        "W {} | L {} | P/L ${:+.2f}".format(
-            r["wins"], r["losses"], r.get("total_lucro", 0.0)),
+        "W {} | L {} | P/L ${:+.2f}".format(wins_spot, losses_spot, pl_spot),
         "📂 Abertas ({}): {}".format(
-            len(minhas_pos), ", ".join(nomes_spot) if nomes_spot else "-"),
+            len(pos_spot), ", ".join(nomes_spot) if nomes_spot else "-"),
     ]
 
     ops = []
-    historico_spot = r.get("historico", [])
-    for h in historico_spot[-8:]:
+    fonte_spot_hist = tg["spot"]["historico"] if tg else r.get("historico", [])
+    for h in fonte_spot_hist[-8:]:
         try:
             chave = datetime.strptime(h.get("data", ""), "%d/%m %H:%M")
         except ValueError:
             chave = datetime.min
         ops.append((chave, _linha_operacao(h, "🟢")))
 
+    abertas_fut = []
+    fut_status_ok = False
     try:
         fut = requests.get(FUTURO_URL.rstrip("/") + "/status", timeout=10).json()
         if fut.get("status") == "online":
+            fut_status_ok = True
             abertas_fut = fut.get("abertas", []) or []
-            nomes_fut = ["{}{}".format(
-                x.get("par", "?").replace("USDT", ""),
-                "/S" if x.get("direcao") == "VENDA" else "") for x in abertas_fut[:6]]
-            linhas += [
-                "───────────────────────────",
-                "🔵 FUTURO ⚡ IA | ${:.2f}/op".format(float(fut.get("entrada_usd", 0))),
-                "W {} | L {} | P/L ${:+.2f}".format(
-                    fut.get("wins", 0), fut.get("losses", 0), float(fut.get("pl_usd", 0))),
-                "📂 Abertas ({}): {}".format(
-                    len(abertas_fut), ", ".join(nomes_fut) if nomes_fut else "-"),
-            ]
-            for h in (fut.get("historico") or [])[-8:]:
-                try:
-                    chave = datetime.strptime(h.get("data", ""), "%d/%m %H:%M")
-                except ValueError:
-                    chave = datetime.min
-                ops.append((chave, _linha_operacao(h, "🔵")))
-        else:
-            raise ValueError("offline")
     except Exception:
-        linhas += [
+        pass
+    if tg and (not fut_status_ok or not abertas_fut):
+        rec = [a for a in tg["abertas"] if a["bot"] == "futuro"]
+        if len(rec) >= len(abertas_fut):
+            abertas_fut = [{"par": a["par"], "direcao": a["direcao"]} for a in rec]
+
+    nomes_fut = ["{}{}".format(
+        x.get("par", "?").replace("USDT", ""),
+        "/S" if x.get("direcao") == "VENDA" else "") for x in abertas_fut[:6]]
+
+    if tg:
+        st_fut = tg["futuro"]
+        bloco_fut = [
+            "───────────────────────────",
+            "🔵 FUTURO ⚡ IA | ${:.2f}/op".format(ENTRADA_FUT_PADRAO),
+            "W {} | L {} | P/L ${:+.2f}".format(
+                st_fut["wins"], st_fut["losses"], st_fut["pl"]),
+            "📂 Abertas ({}): {}".format(
+                len(abertas_fut), ", ".join(nomes_fut) if nomes_fut else "-"),
+        ]
+        for h in tg["futuro"]["historico"][-8:]:
+            try:
+                chave = datetime.strptime(h.get("data", ""), "%d/%m %H:%M")
+            except ValueError:
+                chave = datetime.min
+            ops.append((chave, _linha_operacao(h, "🔵")))
+    elif fut_status_ok:
+        bloco_fut = [
+            "───────────────────────────",
+            "🔵 FUTURO ⚡ IA | ${:.2f}/op".format(float(fut.get("entrada_usd", 0))),
+            "W {} | L {} | P/L ${:+.2f}".format(
+                fut.get("wins", 0), fut.get("losses", 0), float(fut.get("pl_usd", 0))),
+            "📂 Abertas ({}): {}".format(
+                len(abertas_fut), ", ".join(nomes_fut) if nomes_fut else "-"),
+        ]
+    else:
+        bloco_fut = [
             "───────────────────────────",
             "🔵 FUTURO ⚡ IA | offline",
         ]
+    linhas += bloco_fut
 
     if ops:
         ops.sort(key=lambda t: t[0], reverse=True)
@@ -320,6 +366,47 @@ def sincronizar_remoto(posicoes, resultados):
         logging.error("[PERSIST] excecao ao sincronizar: {}".format(e))
 
 
+def reconciliar_com_telegram(posicoes_abertas, resultados):
+    """Usa o historico real do chat como fonte da verdade no boot."""
+    try:
+        from core.tg_history import ler_estado_do_chat
+        tg = ler_estado_do_chat(forcar=True)
+        if not tg:
+            return posicoes_abertas, resultados
+
+        s = tg["spot"]
+        if s["wins"] + s["losses"] > resultados.get("wins", 0) + resultados.get("losses", 0):
+            resultados["wins"] = s["wins"]
+            resultados["losses"] = s["losses"]
+            resultados["total_lucro"] = round(s["pl"], 4)
+            resultados["historico"] = s["historico"][-100:]
+            salvar_resultados(resultados)
+            logging.info("[TG] placar SPOT recuperado: {}W {}L ${:+.2f}".format(
+                s["wins"], s["losses"], s["pl"]))
+
+        if not posicoes_abertas:
+            rec = []
+            for a in tg["abertas"]:
+                if a["bot"] != "spot":
+                    continue
+                rec.append({
+                    "par": a["par"],
+                    "direcao": a["direcao"],
+                    "entrada": a["entrada"],
+                    "stop": a["stop"],
+                    "alvo": a["alvo"],
+                    "data": a["data"],
+                    "preco_atual": a["entrada"],
+                })
+            if rec:
+                salvar_posicoes(rec)
+                posicoes_abertas = rec
+                logging.info("[TG] {} posicoes SPOT reconstruidas do chat".format(len(rec)))
+    except Exception as e:
+        logging.warning("[TG] reconciliacao falhou: {}".format(e))
+    return posicoes_abertas, resultados
+
+
 def monitor_loop():
     time.sleep(10)
 
@@ -329,12 +416,8 @@ def monitor_loop():
     restaurar_do_remoto()
     posicoes_abertas = carregar_posicoes()
     resultados = carregar_resultados()
-
-    try:
-        from core.persist import configurado
-        logging.info("[PERSIST] persistencia GitHub ativa: {}".format(configurado()))
-    except Exception:
-        pass
+    posicoes_abertas, resultados = reconciliar_com_telegram(
+        posicoes_abertas, resultados)
 
     if telegram_ok:
         try:
