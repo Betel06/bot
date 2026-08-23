@@ -34,10 +34,12 @@ _MODELO_ATIVO = None
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
 
-# Timeframes por mercado: futuros = day trade rapido; spot = swing multi-TF
+# Timeframes por mercado: futuros = day trade rapido; spot = swing multi-TF;
+# b3 = day trade em mini dolar (dados da B3 via TradingView)
 TFS_POR_MERCADO = {
     "spot": (("4h", 40), ("1h", 50), ("15m", 60)),
     "futuros": (("1h", 40), ("15m", 50), ("5m", 60)),
+    "b3": (("60m", 40), ("15m", 50), ("5m", 60)),
 }
 
 PROMPT_FUTUROS = """
@@ -45,6 +47,21 @@ CONTEXTO DA OPERACAO: voce opera FUTUROS de cripto em DAY TRADE (ciclos rapidos,
 - Long e Short sao igualmente naturais: opere os dois lados conforme a estrutura.
 - Velocidade importa: priorize o que acontece no 15m/5m, usando o 1h so como direcao geral.
 - Disciplina de risco e inegociavel: sem alavancagem alta sem confluencia; se o R:R minimo nao aparecer, NADA.
+""".strip()
+
+PROMPT_B3 = """
+CONTEXTO DA OPERACAO: voce opera FUTUROS da B3 (Brasil) em DAY TRADE no MINI DOLAR WDO
+(contrato continuo WDO1!, precos em PONTOS; tick 0,5 ponto = R$5 por contrato; 1 ponto = R$10).
+- Long e Short sao igualmente naturais: opere os dois lados conforme a estrutura.
+- Sessao 09h00-18h25 BRT. Voce so e acionado dentro das killzones:
+  ABERTURA BRASIL (09h00-10h30), ABERTURA NY (10h30-12h30) e TARDE (15h00-17h00).
+- Referencias de liquidez proprias do WDO: maxima/minima do dia anterior, gap de abertura,
+  topo/fundo da madrugada (overnight range) e PTAX. Sweep desses niveis e evento chave.
+- O WDO reage FORTE a macro (COPOM, Focus, payroll, Fed, dados BR): perto de evento,
+  leitura tecnica pura nao vale — a resposta correta e NADA.
+- Velocidade importa: priorize o 15m/5m, usando o 60m so como direcao geral.
+- Disciplina inegociavel: sem confluencia e R:R minimo, NADA. Stop onde a tese morre
+  (alem do sweep/OB), alvo na liquidez oposta.
 """.strip()
 
 # ---------------------------------------------------------------------------
@@ -98,6 +115,13 @@ def _fmt_candles(df, n):
     return "\n".join(linhas)
 
 
+def _buscar_candles(par, intervalo, n, mercado):
+    if mercado == "b3":
+        from core.dados_b3 import buscar_historico_b3
+        return buscar_historico_b3(par, intervalo, n)
+    return buscar_historico(par, intervalo, n, mercado=mercado)
+
+
 def coletar_contexto(par, mercado="spot"):
     """Monta o contexto multi-timeframe compacto de um par."""
     partes = ["PAR: {} ({})".format(par, mercado.upper())]
@@ -105,7 +129,7 @@ def coletar_contexto(par, mercado="spot"):
 
     for tf, n in tfs:
         try:
-            df = buscar_historico(par, tf, n, mercado=mercado)
+            df = _buscar_candles(par, tf, n, mercado)
             if df is None or len(df) == 0:
                 continue
             partes.append("\n=== CANDLES {} (mais recentes por ultimo) ===".format(tf))
@@ -224,6 +248,8 @@ LOG_IA = os.path.join(LOG_DIR, "ai_decisions.jsonl")
 def _arquivo_log(mercado):
     if mercado == "futuros":
         return os.path.join(LOG_DIR, "ai_decisions_futuro.jsonl")
+    if mercado == "b3":
+        return os.path.join(LOG_DIR, "ai_decisions_b3.jsonl")
     return LOG_IA
 
 
@@ -245,17 +271,28 @@ def _registrar(par, resultado_bruto, final, erro, mercado="spot"):
         pass
 
 
-def analisar_com_ia(par, mercado="spot"):
+def analisar_com_ia(par, mercado="spot", estudo=False):
     """
     Retorna dict no formato de sinal do monitor:
     {"sinal": "COMPRA"/"VENDA", "preco", "stop", "alvo", "rsi", "tendencia", "motivo"}
     ou None se nao ha sinal / houve erro.
+    estudo=True: registra a decisao para auditoria mas NUNCA retorna sinal
+    (usado pelo STUDY_MODE fora da sessao).
     """
     try:
         contexto = coletar_contexto(par, mercado)
         prompt = PROMPT_SISTEMA
         if mercado in ("futuros", "futuro"):
             prompt += "\n" + PROMPT_FUTUROS
+        elif mercado == "b3":
+            prompt += "\n" + PROMPT_B3
+            try:
+                from b3.config import janela_atual, em_blackout
+                prompt += "\nJANELA ATUAL: {}".format(
+                    em_blackout() and "BLACKOUT MACRO (proibido operar)"
+                    or janela_atual() or "FORA DE KILLZONE (estudo)")
+            except Exception:
+                pass
         prompt += "\n\nDADOS DE MERCADO:\n" + contexto
         bruto, erro_api = _chamar_gemini(prompt)
 
@@ -273,7 +310,7 @@ def analisar_com_ia(par, mercado="spot"):
 
         preco_ref = 0.0
         try:
-            df = buscar_historico(par, "1m", 2, mercado=mercado)
+            df = _buscar_candles(par, "1m", 2, mercado)
             preco_ref = float(df["close"].iloc[-1])
         except Exception:
             pass
@@ -286,7 +323,10 @@ def analisar_com_ia(par, mercado="spot"):
 
         _registrar(par, bruto, final, None, mercado)
 
-        if final["sinal"] == "NADA":
+        if estudo or final["sinal"] == "NADA":
+            if estudo and final["sinal"] != "NADA":
+                logging.info("[ESTUDO] {} sinal {} ignorado (fora de sessao)".format(
+                    par, final["sinal"]))
             return None
 
         if float(final.get("rr") or 0) < 1.5:
@@ -313,7 +353,7 @@ def analisar_com_ia(par, mercado="spot"):
 
     except Exception as e:
         logging.error("[IA] {} excecao: {}".format(par, e))
-        _registrar(par, None, None, str(e))
+        _registrar(par, None, None, str(e), mercado)
         return None
 
 

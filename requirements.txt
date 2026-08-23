@@ -3,3 +3,5 @@ pandas
 requests
 flask
 telethon
+tzdata
+git+https://github.com/rongardF/tvdatafeed.git
