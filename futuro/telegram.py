@@ -56,7 +56,7 @@ def formatar_sinal(sinal):
         "\n"
         "📖 Leitura: {9}\n"
         "\n"
-        "⚡ Alavancagem com moderacao. Gerencie o risco!"
+        "⚡ Alavancagem: 5x | Gerencie o risco!"
     ).format(
         "🔵", emoji, tag, sinal["par"],
         sinal["par"],
@@ -96,4 +96,7 @@ def formatar_resultado(res):
         float(res["lucro_pct"]),
         float(res["lucro_usd"]),
     )
+    alav = res.get("alavancagem")
+    if alav:
+        texto += "\n⚡ Alavancagem: {}x aplicada".format(alav)
     return texto

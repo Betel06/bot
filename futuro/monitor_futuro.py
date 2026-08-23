@@ -38,7 +38,7 @@ _bufh = _BufferHandler()
 _bufh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logging.getLogger().addHandler(_bufh)
 
-from futuro.config import PARES, PARES_POR_RODADA, INTERVALO_MONITOR, ENTRADA_USD, MERCADO
+from futuro.config import PARES, PARES_POR_RODADA, INTERVALO_MONITOR, ENTRADA_USD, ALAVANCAGEM, MERCADO
 from core.ai_brain import analisar_com_ia, ia_ativa
 from core.dados import buscar_historico
 from futuro.telegram import carregar_config, enviar_mensagem, formatar_sinal, formatar_resultado
@@ -108,7 +108,9 @@ def checar_posicoes(posicoes_abertas):
                 else:
                     lucro = (pos["entrada"] - saida) / pos["entrada"]
                 resultado.append({**pos, "tipo": tipo, "preco_saida": saida,
-                                  "lucro_pct": lucro * 100, "lucro_usd": lucro * ENTRADA_USD})
+                                  "lucro_pct": lucro * 100,
+                                  "lucro_usd": lucro * ENTRADA_USD * ALAVANCAGEM,
+                                  "alavancagem": ALAVANCAGEM})
                 posicoes_abertas.remove(pos)
         except Exception:
             pass
@@ -320,6 +322,7 @@ def criar_app():
             "wins": r["wins"],
             "losses": r["losses"],
             "entrada_usd": ENTRADA_USD,
+            "alavancagem": ALAVANCAGEM,
             "pl_usd": round(r["total_lucro"], 4),
             "posicoes_abertas": len(p),
             "abertas": [{"par": x["par"], "direcao": x.get("direcao", "")} for x in p],

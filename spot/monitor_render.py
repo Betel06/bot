@@ -51,6 +51,15 @@ TABELA_FILE = os.path.join(BOT_DIR, "logs", "tabela_msg.json")
 ENTRADA_USD = float(os.environ.get("SPOT_ENTRADA", "1.0"))
 FUTURO_URL = os.environ.get("FUTURO_URL", "https://bot-futuro.onrender.com")
 ENTRADA_FUT_PADRAO = float(os.environ.get("FUTURO_ENTRADA", "2.0"))
+BANCO_SPOT = float(os.environ.get("SPOT_BANCO_INICIAL", "10.0"))
+BANCO_FUT = float(os.environ.get("FUTURO_BANCO_INICIAL", "10.0"))
+
+
+def _linha_banco(banco, pl):
+    if banco <= 0:
+        return ""
+    return "🏦 Banco: ${:.2f} de ${:.2f} ({:+.1f}%)".format(
+        banco + pl, banco, pl / banco * 100)
 
 ESTADO = {
     "modo": "RSI",
@@ -213,6 +222,7 @@ def montar_tabela(resultados_proprios):
         "═══════════════════════════",
         "🟢 SPOT | ${:.2f}/op".format(ENTRADA_USD),
         "W {} | L {} | P/L ${:+.2f}".format(wins_spot, losses_spot, pl_spot),
+        _linha_banco(BANCO_SPOT, pl_spot),
         "📂 Abertas ({}): {}".format(
             len(pos_spot), ", ".join(nomes_spot) if nomes_spot else "-"),
     ]
@@ -251,6 +261,7 @@ def montar_tabela(resultados_proprios):
             "🔵 FUTURO ⚡ IA | ${:.2f}/op".format(ENTRADA_FUT_PADRAO),
             "W {} | L {} | P/L ${:+.2f}".format(
                 st_fut["wins"], st_fut["losses"], st_fut["pl"]),
+            _linha_banco(BANCO_FUT, st_fut["pl"]),
             "📂 Abertas ({}): {}".format(
                 len(abertas_fut), ", ".join(nomes_fut) if nomes_fut else "-"),
         ]
@@ -261,11 +272,13 @@ def montar_tabela(resultados_proprios):
                 chave = datetime.min
             ops.append((chave, _linha_operacao(h, "🔵")))
     elif fut_status_ok:
+        pl_fut_api = float(fut.get("pl_usd", 0))
         bloco_fut = [
             "───────────────────────────",
             "🔵 FUTURO ⚡ IA | ${:.2f}/op".format(float(fut.get("entrada_usd", 0))),
             "W {} | L {} | P/L ${:+.2f}".format(
-                fut.get("wins", 0), fut.get("losses", 0), float(fut.get("pl_usd", 0))),
+                fut.get("wins", 0), fut.get("losses", 0), pl_fut_api),
+            _linha_banco(BANCO_FUT, pl_fut_api),
             "📂 Abertas ({}): {}".format(
                 len(abertas_fut), ", ".join(nomes_fut) if nomes_fut else "-"),
         ]
