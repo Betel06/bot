@@ -46,6 +46,7 @@ from b3.config import (ATIVO, CONTRATOS, VALOR_PONTO, CUSTO_TRADE, BANCO_INICIAL
 from core.ai_brain import analisar_com_ia, ia_ativa
 from core.dados_b3 import buscar_candles_b3, ULTIMA_FONTE_B3
 from b3.telegram import carregar_config, enviar_mensagem, formatar_sinal, formatar_resultado
+from b3.config import dia_util
 
 POSICOES_FILE = os.path.join(BOT_DIR, "logs", "b3_posicoes.json")
 RESULTADOS_FILE = os.path.join(BOT_DIR, "logs", "b3_resultados.json")
@@ -190,7 +191,20 @@ def monitor_loop():
 
     dia_hoje = agora_brt().date()
     controle = {"sinais_hoje": 0, "pl_dia": 0.0, "bloqueado_motivo": None,
-                "ultimo_estudo_ts": 0}
+                "ultimo_estudo_ts": 0, "ultimo_candle_sinal": None,
+                "ultimo_candle_estudo": None}
+
+    def candle_novo(par, intervalo, chave):
+        """True se o ultimo candle mudou desde a ultima analise (economiza quota IA)."""
+        try:
+            df = buscar_candles_b3(par, intervalo, 1)
+            ts = str(df["abertura_tempo"].iloc[-1])
+            if controle[chave] == ts:
+                return False
+            controle[chave] = ts
+            return True
+        except Exception:
+            return True
 
     def resetar_se_novo_dia(agora):
         nonlocal dia_hoje
@@ -245,12 +259,14 @@ def monitor_loop():
             if pode and controle["bloqueado_motivo"] is None \
                     and controle["sinais_hoje"] < MAX_SINAIS_DIA \
                     and not posicoes_abertas:
-                sinais = checar_sinais(motivo_janela)
-                ESTADO["ultima_rodada"] = agora.strftime("%d/%m %H:%M:%S")
-                ESTADO["sinais_gerados"] += len(sinais)
-            elif not pode and STUDY_MODE and ia_ativa():
+                if candle_novo(ATIVO, INTERVALO, "ultimo_candle_sinal"):
+                    sinais = checar_sinais(motivo_janela)
+                    ESTADO["ultima_rodada"] = agora.strftime("%d/%m %H:%M:%S")
+                    ESTADO["sinais_gerados"] += len(sinais)
+            elif not pode and STUDY_MODE and ia_ativa() and dia_util(agora):
                 ts = time.time()
-                if ts - controle["ultimo_estudo_ts"] >= INTERVALO_ESTUDO:
+                if ts - controle["ultimo_estudo_ts"] >= INTERVALO_ESTUDO \
+                        and candle_novo("DXY", "60m", "ultimo_candle_estudo"):
                     controle["ultimo_estudo_ts"] = ts
                     analisar_com_ia("DXY", mercado=MERCADO, estudo=True)
                     ESTADO["ultimo_estudo"] = datetime.utcnow().strftime("%d/%m %H:%M")
