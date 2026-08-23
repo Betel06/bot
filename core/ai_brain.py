@@ -22,8 +22,13 @@ from core.dados import buscar_historico
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 # Cadeia de modelos: cota diaria e POR MODELO; se um esgotar, usa o proximo.
+# Lista validada contra a API em 22/08 (testes reais de generateContent):
+# gemini-2.5-flash/-lite retornam 404 nessa key; nao usar.
 MODELOS = [m.strip() for m in os.environ.get(
-    "AI_MODELS", "gemini-3.6-flash,gemini-3.5-flash-lite").split(",") if m.strip()]
+    "AI_MODELS",
+    "gemini-3.6-flash,gemini-3.7-flash,gemini-3.5-flash,gemini-3.5-flash-lite,"
+    "gemini-3.1-flash-lite,gemini-flash-latest,gemini-flash-lite-latest"
+).split(",") if m.strip()]
 MODELO = os.environ.get("AI_MODEL", MODELOS[0])
 _MODELO_ATIVO = None
 
