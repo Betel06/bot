@@ -5,7 +5,9 @@ import time
 import threading
 import logging
 import collections
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+BRT = timezone(timedelta(hours=-3))  # horario de Brasilia fixo (independe do servidor)
 
 import requests
 
@@ -217,7 +219,7 @@ def monitor_loop():
 
     while True:
         rodada += 1
-        agora = datetime.now()
+        agora = datetime.now(BRT)
 
         try:
             novos_resultados = checar_posicoes(posicoes_abertas)

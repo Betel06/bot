@@ -13,7 +13,9 @@ import os
 import json
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+BRT = timezone(timedelta(hours=-3))  # horario de Brasilia fixo (independe do servidor)
 
 import requests
 
@@ -258,7 +260,7 @@ def _registrar(par, resultado_bruto, final, erro, mercado="spot"):
         caminho = _arquivo_log(mercado)
         os.makedirs(os.path.dirname(caminho), exist_ok=True)
         registro = {
-            "data": datetime.now().strftime("%d/%m %H:%M:%S"),
+            "data": datetime.now(BRT).strftime("%d/%m %H:%M:%S"),
             "mercado": mercado,
             "par": par,
             "erro": erro,

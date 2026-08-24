@@ -269,7 +269,7 @@ def monitor_loop():
                         and candle_novo("DXY", "60m", "ultimo_candle_estudo"):
                     controle["ultimo_estudo_ts"] = ts
                     analisar_com_ia("DXY", mercado=MERCADO, estudo=True)
-                    ESTADO["ultimo_estudo"] = datetime.utcnow().strftime("%d/%m %H:%M")
+                    ESTADO["ultimo_estudo"] = agora_brt().strftime("%d/%m %H:%M")
 
             for s in sinais:
                 posicoes_abertas.append({
