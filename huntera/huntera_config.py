@@ -1,6 +1,9 @@
 # Huntera Game Configuration
 # Configurações do bot de jogo Huntera (MMORPG de caça)
 
+import os
+from datetime import datetime
+
 # === BÁSICO ===
 # Entrada em moeda do jogo (padrão: 1000 GP - Gold Points)
 HUNTERA_ENTRADA_GP = int(os.environ.get("HUNTERA_ENTRADA_GP", "1000"))

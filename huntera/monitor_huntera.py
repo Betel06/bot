@@ -409,12 +409,6 @@ def hello_world():
 
 @app.route("/health")
 def health():
-    if bot_process is None:
-        return "bot nao iniciado", 503
-    if bot_process.poll() is not None:
-        logging.warning("[HUNTERA] bot de jogo morreu, tentando reiniciar...")
-        # iniciar_jogo()  # Comentado para teste
-        return "retry", 200
     return "ok"
 
 
