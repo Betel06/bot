@@ -367,6 +367,38 @@ def keep_alive_loop():
         time.sleep(600)
 
 
+def salvar_posicoes(data):
+    try:
+        os.makedirs(os.path.dirname(POSICOES_FILE), exist_ok=True)
+        with open(POSICOES_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
+
+def salvar_resultados(data):
+    try:
+        os.makedirs(os.path.dirname(RESULTADOS_FILE), exist_ok=True)
+        with open(RESULTADOS_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
+
+def carregar_resultados():
+    try:
+        with open(RESULTADOS_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {
+            "total_rodadas": ESTADO.get("total_rodadas", 0),
+            "trofeus_coletados": ESTADO.get("trofeus_coletados", 0),
+            "pesos_pegos": ESTADO.get("pesos_pegos", 0),
+            "lugar_atual": ESTADO.get("lugar_atual", "nenhum"),
+            "indo_cidade": ESTADO.get("indo_cidade", False),
+        }
+
+
 def carregar_config():
     try:
         from core.telegram import carregar_config as _carregar
