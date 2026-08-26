@@ -93,33 +93,30 @@ class HunteraBot:
                 body = self.page.inner_text("body") if self.page else ""
                 logger.info("[WAIT {}s] URL={} Body={}".format(i, url, body[:120]))
 
-                if "Caçar" in body or "Distance Fighting" in body or "DEPOT" in body:
+                if "Caçar" in body or "Hunt" in body or "Distance Fighting" in body or "DEPOT" in body:
                     logger.info("Jogo PRONTO pra jogar!")
                     self._screenshot("jogo_pronto")
                     return True
 
-                if "Escolha seu personagem" in body or "SUA CONTA" in body:
-                    logger.info("Tela de selecao, procurando Jogar...")
-                    jogar = self.page.query_selector('button:has-text("Jogar")')
-                    if jogar:
+                na_selecao = ("Escolha seu personagem" in body or "SUA CONTA" in body or
+                              "Choose your character" in body or "YOUR ACCOUNT" in body)
+                if na_selecao:
+                    logger.info("Tela de selecao detectada, procurando Jogar/Play...")
+                    # Tenta "Jogar" (PT) e "Play" (EN)
+                    clicked = False
+                    for label in ["Jogar", "Play"]:
                         try:
-                            jogar.click(timeout=3000)
-                            logger.info("Clicou Jogar!")
-                            time.sleep(5)
+                            el = self.page.locator(f'button:has-text("{label}")').first
+                            if el.is_visible(timeout=2000):
+                                el.click()
+                                logger.info("Clicou: {}".format(label))
+                                clicked = True
+                                time.sleep(5)
+                                break
                         except Exception:
                             pass
-                    else:
-                        botoes = self.page.query_selector_all('button')
-                        for b in botoes:
-                            try:
-                                txt = b.inner_text()
-                                if "Jogar" in txt or "jogar" in txt:
-                                    b.click()
-                                    logger.info("Clicou botao Jogar via busca!")
-                                    time.sleep(5)
-                                    break
-                            except Exception:
-                                pass
+                    if not clicked:
+                        logger.warning("Nao achou botao Jogar/Play!")
                 elif "ENTERING WORLD" in body or "Loading" in body:
                     logger.info("Carregando mundo...")
 
@@ -294,11 +291,21 @@ class HunteraBot:
                     logger.info("[ENGINE] URL: {}".format(info.get("url", "")))
 
                 # Detecta estado do jogo
-                na_selecao = "Escolha seu personagem" in body or "SUA CONTA" in body
-                carregando = "ENTERING WORLD" in body or "Loading" in body
-                na_cidade = any(k in body for k in ["Depot", "VENDA RÁPIDA", "DEPOT", "Loja"])
-                caçando = "Caçar" in body or "Distance Fighting" in body
-                tem_caçar_btn = "Caçar" in btn_texts
+                na_selecao = any(k in body for k in [
+                    "Escolha seu personagem", "SUA CONTA",
+                    "Choose your character", "YOUR ACCOUNT"
+                ])
+                carregando = any(k in body for k in [
+                    "ENTERING WORLD", "Loading", "Carregando"
+                ])
+                na_cidade = any(k in body for k in [
+                    "Depot", "VENDA RÁPIDA", "DEPOT", "Loja",
+                    "IMBUEMENTS", "BLESSINGS"
+                ])
+                caçando = any(k in body for k in [
+                    "Caçar", "Distance Fighting", "Hunt",
+                    "CONJUNTO", "ALVO"
+                ])
 
                 self.estado["em_cidade"] = na_cidade
                 self.estado["caçando"] = caçando
@@ -308,8 +315,13 @@ class HunteraBot:
 
                 # 1. Tela de selecao
                 if na_selecao:
-                    logger.info("[ENGINE] Tela de selecao detectada, clicando Jogar...")
-                    if not self._clicar_botao_seguro("Jogar", timeout=3):
+                    logger.info("[ENGINE] Tela de selecao detectada, clicando Jogar/Play...")
+                    clicked = False
+                    for label in ["Jogar", "Play"]:
+                        if self._clicar_botao_seguro(label, timeout=3):
+                            clicked = True
+                            break
+                    if not clicked:
                         self._clicar_botao_seguro("…", timeout=3)
                     time.sleep(5)
                     self._screenshot("selecao")
@@ -322,11 +334,11 @@ class HunteraBot:
                     return self.estado
 
                 # 3. Fecha popups/notificacoes
-                for txt in ["×", "Fechar"]:
+                for txt in ["×", "Fechar", "Close", "X"]:
                     self._clicar_seguro(txt, timeout=1)
 
-                # 4. Se esta caçando ou tem botao Caçar
-                if caçando or tem_caçar_btn:
+                # 4. Se esta caçando ou tem botao Caçar/Hunt
+                if caçando:
                     self.estado["lugar"] = "caça"
                     self.estado["caçando"] = True
                     self.estado["trofeus_coletados"] += random.randint(0, 2)
@@ -344,26 +356,46 @@ class HunteraBot:
                     self.estado["caçando"] = False
                     logger.info("[ENGINE] Na cidade, vendendo...")
 
-                    if self._clicar_botao_seguro("VENDA RÁPIDA", timeout=3):
-                        time.sleep(2)
-                        self._clicar_botao_seguro("Confirmar", timeout=2)
-                        self._clicar_botao_seguro("Sim", timeout=2)
-                        time.sleep(1)
-                        logger.info("[ENGINE] Venda rapida concluida!")
+                    for label in ["VENDA RÁPIDA", "QUICK SELL"]:
+                        if self._clicar_botao_seguro(label, timeout=3):
+                            time.sleep(2)
+                            self._clicar_botao_seguro("Confirmar", timeout=2)
+                            self._clicar_botao_seguro("Sim", timeout=2)
+                            self._clicar_botao_seguro("Yes", timeout=2)
+                            time.sleep(1)
+                            logger.info("[ENGINE] Venda rapida concluida!")
+                            break
 
                     self._screenshot("cidade")
                     self.estado["bolsa_cheia"] = False
 
                     time.sleep(2)
-                    self._clicar_seguro("Caçar", timeout=5)
+                    for label in ["Caçar", "Hunt"]:
+                        if self._clicar_seguro(label, timeout=3):
+                            break
                     time.sleep(3)
 
-                # 6. Situacao desconhecida - loga pra debug
+                # 6. Tela de selecao que escapou do wait
+                elif na_selecao:
+                    logger.info("[ENGINE] Ainda na selecao, clicando Play/Jogar...")
+                    for label in ["Jogar", "Play"]:
+                        if self._clicar_botao_seguro(label, timeout=3):
+                            break
+                    time.sleep(5)
+
+                # 7. Carregando
+                elif carregando:
+                    logger.info("[ENGINE] Ainda carregando...")
+                    time.sleep(5)
+
+                # 8. Situacao desconhecida
                 else:
                     logger.warning("[ENGINE] Situacao desconhecida! Body: {}".format(body[:200]))
                     self._screenshot("desconhecido")
-                    # Tenta clicar Caçar como fallback
-                    self._clicar_seguro("Caçar", timeout=3)
+                    # Tenta clicar Caçar/Hunt como fallback
+                    for label in ["Caçar", "Hunt"]:
+                        if self._clicar_seguro(label, timeout=3):
+                            break
                     time.sleep(3)
 
             else:
@@ -380,15 +412,13 @@ class HunteraBot:
     def _ir_cidade(self):
         """Tenta ir para a cidade/vender."""
         try:
-            # Procura por botao de ir cidade / voltar
-            for txt in ["DEPOT", "Depot", "Loja", "Cidade", "Town"]:
+            for txt in ["DEPOT", "Depot", "Loja", "Shop", "Town", "Cidade"]:
                 if self._clicar_seguro(txt, timeout=2):
                     time.sleep(3)
                     self._screenshot("indo_cidade")
                     return True
 
-            # Tela cheia - tenta clicar no mapa pra voltar
-            logger.warning("[ENGINE] Nao achou botao de cidade, tentando voltar...")
+            logger.warning("[ENGINE] Nao achou botao de cidade")
             self._screenshot("sem_botao_cidade")
             return False
 
