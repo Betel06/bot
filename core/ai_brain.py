@@ -21,7 +21,8 @@ import requests
 
 from core.dados import buscar_historico
 from core.indicadores import (
-    calcular_rsi, calcular_ema, calcular_adx, calcular_supertrend, calcular_atr
+    calcular_rsi, calcular_ema, calcular_adx, calcular_supertrend, calcular_atr,
+    detectar_bos
 )
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -60,7 +61,15 @@ FILTRO DE TENDENCIA (OBRIGATORIO):
 - Se Tendencia EMA = "LATERAL": os dois lados sao permitidos, mas so com confluencia forte.
 - Se SuperTrend = "VENDA": nao abra COMPRA. Se SuperTrend = "COMPRA": nao abra VENDA.
 - Se ADX < 20: tendencia fraca, considere NADA (mercado lateral sem direcao clara).
-- R:R MINIMO = 2.0. Abaixo disso, NADA.
+
+BOS - BREAK OF STRUCTURE (OBRIGATORIO PARA ENTRADA):
+- NUNCA entre sem um BOS confirmado na direcao do trade.
+- COMPRA so se BOS = "ALTA" (preco quebrou swing high para cima = continuacao de alta).
+- VENDA so se BOS = "BAIXA" (preco quebrou swing low para baixo = continuacao de baixa).
+- Se NAO ha BOS claro, NADA e a resposta. Entrar sem BOS e gambiarra.
+- O campo "bos" no JSON DEVE conter: "ALTA", "BAIXA", ou "NENHUM".
+
+R:R MINIMO = 2.0. Abaixo disso, NADA.
 """.strip()
 
 PROMPT_B3 = """
@@ -108,6 +117,7 @@ REGRAS CRITICAS:
 RESPONDA APENAS COM JSON VALIDO neste formato exato:
 {
   "sinal": "COMPRA" | "VENDA" | "NADA",
+  "bos": "ALTA" | "BAIXA" | "NENHUM",
   "confianca": 0-100,
   "preco": <preco atual>,
   "stop": <nivel do stop>,
@@ -173,9 +183,29 @@ def _calcular_indicadores(df):
             adx_val, plus_di_val, minus_di_val),
         "SuperTrend(10,3): {} (direcao atual)".format(st_direcao),
         "ATR(14): {:.6g} (volatilidade)".format(atr),
+        _calcular_bos(df),
         "--- FIM INDICADORES ---",
     ]
     return "\n".join(partes)
+
+
+def _calcular_bos(df):
+    """Detecta BOS nos candles e retorna string formatada pro prompt."""
+    if df is None or len(df) < 15:
+        return "BOS: dados insuficientes"
+
+    high = df["high"]
+    low = df["low"]
+    close = df["close"]
+
+    bos, preco_swing = detectar_bos(high, low, close)
+
+    if bos == "BOS_ALTA":
+        return "BOS DETECTADO: ALTA (quebrou swing high em {:.6g})".format(preco_swing)
+    elif bos == "BOS_BAIXA":
+        return "BOS DETECTADO: BAIXA (quebrou swing low em {:.6g})".format(preco_swing)
+    else:
+        return "BOS: NENHUM DETECTADO (sem quebra de estrutura)"
 
 
 def _buscar_candles(par, intervalo, n, mercado):
@@ -229,6 +259,13 @@ def _validar(decisao, preco_ref):
     if sinal == "NADA":
         decisao["preco"] = preco
         return decisao, None
+
+    # Validacao BOS: obrigatorio para entradas
+    bos = str(decisao.get("bos", "NENHUM")).upper().strip()
+    if sinal == "COMPRA" and bos != "ALTA":
+        return None, "COMPRA sem BOS ALTA (bos={})".format(bos)
+    if sinal == "VENDA" and bos != "BAIXA":
+        return None, "VENDA sem BOS BAIXA (bos={})".format(bos)
 
     if preco <= 0:
         return None, "preco <= 0"
@@ -404,9 +441,9 @@ def analisar_com_ia(par, mercado="spot", estudo=False):
             _registrar(par, bruto, final, "R:R {} < 2.0".format(rr), mercado)
             return None
 
-        logging.info("[IA] SINAL {} {} conf={} rr={} | {}".format(
+        logging.info("[IA] SINAL {} {} conf={} rr={} bos={} | {}".format(
             final["sinal"], par, final.get("confianca"), final.get("rr"),
-            str(final.get("motivo"))[:120]))
+            final.get("bos", "?"), str(final.get("motivo"))[:120]))
 
         return {
             "par": par,

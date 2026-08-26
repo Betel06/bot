@@ -95,3 +95,54 @@ def calcular_supertrend(high, low, close, periodo=10, multiplicador=3):
         supertrend.iloc[i] = inferior.iloc[i] if direcao.iloc[i] == 1 else superior.iloc[i]
 
     return supertrend, direcao
+
+
+def detectar_bos(high, low, close, lookback=5):
+    """
+    Detecta Break of Structure (BOS) nos dados de preco.
+
+    Encontra swing highs/lows (pivots) e verifica se o preco atual quebrou
+    o ultimo swing confirmado.
+
+    Retorna: ("BOS_ALTA", preco_swing) | ("BOS_BAIXA", preco_swing) | ("SEM_BOS", None)
+    """
+    if len(high) < lookback * 2 + 1:
+        return ("SEM_BOS", None)
+
+    # Encontra swing highs: high[i] > highs vizinhos
+    swing_highs = []
+    swing_lows = []
+
+    for i in range(lookback, len(high) - lookback):
+        # Swing high: high[i] e maior que os lookback anteriores e posteriores
+        eh_swing_high = True
+        eh_swing_low = True
+        for j in range(1, lookback + 1):
+            if high.iloc[i] <= high.iloc[i - j] or high.iloc[i] <= high.iloc[i + j]:
+                eh_swing_high = False
+            if low.iloc[i] >= low.iloc[i - j] or low.iloc[i] >= low.iloc[i + j]:
+                eh_swing_low = False
+
+        if eh_swing_high:
+            swing_highs.append((i, float(high.iloc[i])))
+        if eh_swing_low:
+            swing_lows.append((i, float(low.iloc[i])))
+
+    if not swing_highs or not swing_lows:
+        return ("SEM_BOS", None)
+
+    # Pega o ultimo swing high e ultimo swing low
+    ultimo_sh_idx, ultimo_sh_preco = swing_highs[-1]
+    ultimo_sl_idx, ultimo_sl_preco = swing_lows[-1]
+
+    preco_atual = float(close.iloc[-1])
+
+    # BOS_ALTA: preco quebrou swing high para cima
+    if preco_atual > ultimo_sh_preco and ultimo_sh_idx < len(close) - 1:
+        return ("BOS_ALTA", ultimo_sh_preco)
+
+    # BOS_BAIXA: preco quebrou swing low para baixo
+    if preco_atual < ultimo_sl_preco and ultimo_sl_idx < len(close) - 1:
+        return ("BOS_BAIXA", ultimo_sl_preco)
+
+    return ("SEM_BOS", None)
