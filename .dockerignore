@@ -1,0 +1,16 @@
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+*.md
+logs/
+screenshots/
+debug_*
+disc_*
+*.png
+*.html
+*.txt
+*.json
+!railway.json
+!requirements.txt
