@@ -256,11 +256,25 @@ class HunteraBot:
         # Le estado inicial
         estado = self._ler_estado_jogo()
         if estado:
-            logger.info(f"Estado inicial: {json.dumps({k: v for k, v in estado.items() if k != 'full_text' and k != 'buttons'}, ensure_ascii=False)}")
-            self.logado = True
+            logger.info("Estado inicial: URL={}".format(estado.get("url", "")))
+            body = estado.get("full_text", "")
+            if "Caçar" in body or "Hunt" in body or "Distance Fighting" in body:
+                logger.info("Jogo logado e pronto!")
+                self.logado = True
+            elif "Escolha seu personagem" in body or "Choose your character" in body:
+                logger.info("Na tela de selecao, tentando Play...")
+                self._wait_for_game(timeout=15)
+                self.logado = True
+            else:
+                logger.info("Estado: {}".format(body[:150]))
+                self.logado = True
             self._atualizar_estado(estado)
+        else:
+            logger.error("Nao conseguiu ler estado inicial")
+            self.running = False
+            return False
 
-        return self.logado
+        return True
 
     def _atualizar_estado(self, info):
         """Atualiza o estado interno com dados da tela."""

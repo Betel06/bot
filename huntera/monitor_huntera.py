@@ -253,42 +253,55 @@ def ir_cidade_vender():
 
 
 def engine_thread():
-    """Thread que roda o Playwright engine em background."""
+    """Thread que roda o Playwright engine em background com auto-restart."""
     global ENGINE, ESTADO
 
     if not ENGINE_AVAILABLE:
         logging.info("[ENGINE] Modo simulado (Playwright indisponivel)")
         return
 
-    logging.info("[ENGINE] Iniciando Playwright...")
-    ENGINE = HunteraBot()
+    while True:
+        logging.info("[ENGINE] Iniciando Playwright...")
+        ENGINE = HunteraBot()
 
-    if not ENGINE.iniciar():
-        logging.error("[ENGINE] Falha ao iniciar Playwright, ficando em modo simulado")
-        ENGINE = None
-        return
+        if not ENGINE.iniciar():
+            logging.error("[ENGINE] Falha ao iniciar Playwright, retry em 30s...")
+            ENGINE = None
+            time.sleep(30)
+            continue
 
-    logging.info("[ENGINE] Playwright rodando! Ciclos a cada {}s".format(INTERVALO_RODADA))
+        logging.info("[ENGINE] Playwright rodando! Ciclos a cada {}s".format(INTERVALO_RODADA))
 
-    while ENGINE and ENGINE.running:
+        while ENGINE and ENGINE.running:
+            try:
+                estado_engine = ENGINE.rodar_ciclo()
+
+                if estado_engine:
+                    with threading.Lock():
+                        ESTADO["personagem"] = estado_engine.get("personagem", ESTADO["personagem"])
+                        ESTADO["total_rodadas"] = estado_engine.get("total_rodadas", ESTADO["total_rodadas"])
+                        ESTADO["trofeus_coletados"] = estado_engine.get("trofeus_coletados", ESTADO["trofeus_coletados"])
+                        ESTADO["pesos_pegos"] = estado_engine.get("pesos_pegos", ESTADO["pesos_pegos"])
+                        ESTADO["lugar_atual"] = estado_engine.get("lugar", ESTADO["lugar_atual"])
+                        ESTADO["indo_cidade"] = estado_engine.get("em_cidade", ESTADO["indo_cidade"])
+                        ESTADO["bolsa_slots_ocupados"] = estado_engine.get("bolsa_slots_ocupados", ESTADO["bolsa_slots_ocupados"])
+                        ESTADO["modo"] = "caça (live)" if estado_engine.get("jogando") else "caça (sim)"
+
+            except Exception as e:
+                logging.error("[ENGINE] Erro: {}".format(e))
+
+            if not ENGINE.running:
+                break
+
+            time.sleep(INTERVALO_RODADA)
+
+        logging.warning("[ENGINE] Engine parou! Reiniciando em 10s...")
         try:
-            estado_engine = ENGINE.rodar_ciclo()
-
-            # Sincroniza estado do engine pro monitor
-            if estado_engine:
-                ESTADO["personagem"] = estado_engine.get("personagem", ESTADO["personagem"])
-                ESTADO["total_rodadas"] = estado_engine.get("total_rodadas", ESTADO["total_rodadas"])
-                ESTADO["trofeus_coletados"] = estado_engine.get("trofeus_coletados", ESTADO["trofeus_coletados"])
-                ESTADO["pesos_pegos"] = estado_engine.get("pesos_pegos", ESTADO["pesos_pegos"])
-                ESTADO["lugar_atual"] = estado_engine.get("lugar", ESTADO["lugar_atual"])
-                ESTADO["indo_cidade"] = estado_engine.get("em_cidade", ESTADO["indo_cidade"])
-                ESTADO["bolsa_slots_ocupados"] = estado_engine.get("bolsa_slots_ocupados", ESTADO["bolsa_slots_ocupados"])
-                ESTADO["modo"] = "caça (live)" if estado_engine.get("jogando") else "caça (sim)"
-
-        except Exception as e:
-            logging.error("[ENGINE] Erro: {}".format(e))
-
-        time.sleep(INTERVALO_RODADA)
+            ENGINE.fechar()
+        except Exception:
+            pass
+        ENGINE = None
+        time.sleep(10)
 
 
 def monitor_loop():
