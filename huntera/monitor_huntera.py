@@ -12,7 +12,9 @@ import requests
 from flask import Flask, jsonify
 
 BOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HUNTERA_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BOT_DIR)
+sys.path.insert(0, HUNTERA_DIR)
 os.chdir(BOT_DIR)
 
 import collections
