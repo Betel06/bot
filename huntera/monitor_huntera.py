@@ -94,6 +94,16 @@ ESTADO = {
 
 bot_process = None
 
+ENGINE = None
+
+try:
+    sys.path.insert(0, HUNTERA_DIR)
+    from engine_huntera import HunteraBot
+    ENGINE_AVAILABLE = True
+except Exception as _e:
+    logging.warning("Engine Playwright indisponivel: {}".format(_e))
+    ENGINE_AVAILABLE = False
+
 
 def get_servidor_horario():
     """Pega horário do servidor - simplificado, usa hora local do bot."""
@@ -242,17 +252,54 @@ def ir_cidade_vender():
         # O sistema de rota fará a mudança nas próximas rodadas
 
 
+def engine_thread():
+    """Thread que roda o Playwright engine em background."""
+    global ENGINE, ESTADO
+
+    if not ENGINE_AVAILABLE:
+        logging.info("[ENGINE] Modo simulado (Playwright indisponivel)")
+        return
+
+    logging.info("[ENGINE] Iniciando Playwright...")
+    ENGINE = HunteraBot()
+
+    if not ENGINE.iniciar():
+        logging.error("[ENGINE] Falha ao iniciar Playwright, ficando em modo simulado")
+        ENGINE = None
+        return
+
+    logging.info("[ENGINE] Playwright rodando! Ciclos a cada {}s".format(INTERVALO_RODADA))
+
+    while ENGINE and ENGINE.running:
+        try:
+            estado_engine = ENGINE.rodar_ciclo()
+
+            # Sincroniza estado do engine pro monitor
+            if estado_engine:
+                ESTADO["personagem"] = estado_engine.get("personagem", ESTADO["personagem"])
+                ESTADO["total_rodadas"] = estado_engine.get("total_rodadas", ESTADO["total_rodadas"])
+                ESTADO["trofeus_coletados"] = estado_engine.get("trofeus_coletados", ESTADO["trofeus_coletados"])
+                ESTADO["pesos_pegos"] = estado_engine.get("pesos_pegos", ESTADO["pesos_pegos"])
+                ESTADO["lugar_atual"] = estado_engine.get("lugar", ESTADO["lugar_atual"])
+                ESTADO["indo_cidade"] = estado_engine.get("em_cidade", ESTADO["indo_cidade"])
+                ESTADO["bolsa_slots_ocupados"] = estado_engine.get("bolsa_slots_ocupados", ESTADO["bolsa_slots_ocupados"])
+                ESTADO["modo"] = "caça (live)" if estado_engine.get("jogando") else "caça (sim)"
+
+        except Exception as e:
+            logging.error("[ENGINE] Erro: {}".format(e))
+
+        time.sleep(INTERVALO_RODADA)
+
+
 def monitor_loop():
-    """Loop principal do bot Huntera com farm completo e retorno à cidade."""
+    """Loop principal do bot Huntera com farm completo e retorno a cidade."""
     time.sleep(10)
 
-    global ESTADO
+    global ESTADO, ENGINE
 
-    # Atualiza horário do servidor
     horario_atual = get_servidor_horario()
     HUNTERA_HORARIO_SERVIDOR = horario_atual
 
-    # Se sistema de seleção automática, escolhe lugar
     if HUNTERA_SYSTEM_SELECAO_AUTO:
         lugar_nome, lugar_dados = selecionar_lugar_caca()
         ESTADO["lugar_atual"] = lugar_nome
@@ -260,18 +307,12 @@ def monitor_loop():
         ESTADO["ultimo_lugar_farm"] = lugar_nome
         logging.info("[SYSTEM] Lugar de caça selecionado: {} - {}".format(lugar_nome, lugar_dados.get("area", "N/A")))
     else:
-        # Fica no lugar fixo configurado ou no último
         lugar_fixo = os.environ.get("HUNTERA_LUGAR_FIXO", "L1_Nova_Reserva")
         lugar_dados = HUNTERA_LUGARES_CACA.get(lugar_fixo, HUNTERA_LUGARES_CACA.get("L1_Nova_Reserva", {}))
         ESTADO["lugar_atual"] = lugar_fixo
         if lugar_dados:
             ESTADO["tempo_no_lugar"] = 0
 
-    # Mensagem de início no Telegram
-    enviar_mensagem("🟢 Bot Huntera iniciado!\nLugar: {}\nModo: {}\nNotificações: a cada 30min".format(
-        ESTADO["lugar_atual"], HUNTERA_MODO))
-
-    # Se segurança ativa, verifica risco
     if ESTADO["seguranca_ativo"]:
         seguro = verificar_seguranca_lugar(lugar_dados)
         if not seguro:
@@ -281,6 +322,15 @@ def monitor_loop():
                 ESTADO["lugar_atual"] = lugar_nome
                 ESTADO["tempo_no_lugar"] = 0
 
+    # Inicia engine Playwright em thread separada
+    engine_t = threading.Thread(target=engine_thread, daemon=True)
+    engine_t.start()
+    time.sleep(3)
+
+    modo_engine = "LIVE (Playwright)" if ENGINE else "SIMULADO"
+    enviar_mensagem("🟢 Bot Huntera iniciado!\nLugar: {}\nModo: {}\nEngine: {}\nNotificações: a cada 30min".format(
+        ESTADO["lugar_atual"], HUNTERA_MODO, modo_engine))
+
     rodada = 0
     intervalo = INTERVALO_RODADA
 
@@ -289,61 +339,59 @@ def monitor_loop():
         agora = datetime.now()
 
         try:
-            # Garante que bot está rodando (Playwright/Node)
-            if bot_process is None or bot_process.poll() is not None:
-                logging.info("[HUNTERA] Verificando status do bot de jogo...")
+            # Se engine live, estado ja vem da thread engine_thread
+            if ENGINE and ENGINE.running:
+                # Engine controla tudo, monitor so registra
+                pass
+            else:
+                # Modo simulado (sem Playwright)
+                ganho_trofeu = random.randint(0, 3)
+                ganho_peso = random.randint(0, 5)
+                ganho_item = random.randint(0, 2)
+                ESTADO["trofeus_coletados"] += ganho_trofeu
+                ESTADO["pesos_pegos"] += ganho_peso
+                ESTADO["bolsa_slots_ocupados"] = min(
+                    ESTADO.get("bolsa_slots_ocupados", 0) + ganho_item,
+                    HUNTERA_BOLSA_SLOTES
+                )
+                ESTADO["itens_na_bolsa"] = ESTADO["bolsa_slots_ocupados"]
 
-            # Verificar se bolsa está cheia A CADA RODADA
-            if verificar_bolsa_cheia():
-                logging.info("[ITEM] Bolsa cheia detectada! (Slots: {}/{} itens: {})".format(
-                    ESTADO.get("bolsa_slots_ocupados", 0), HUNTERA_BOLSA_SLOTES,
-                    ESTADO.get("itens_na_bolsa", 0)))
-                ir_cidade_vender()
+            # Checa se bolsa cheia e precisa ir cidade (modos simulado e live)
+            if ESTADO.get("bolsa_slots_ocupados", 0) >= HUNTERA_BOLSA_SLOTES:
+                logging.info("[ITEM] Bolsa cheia! Indo vender na cidade...")
+                ESTADO["bolsa_cheia"] = True
+                ESTADO["indo_cidade"] = True
+                # Se engine live, engine_huntera cuida da venda
+                if not (ENGINE and ENGINE.running):
+                    ir_cidade_vender()
+            else:
+                ESTADO["bolsa_cheia"] = False
 
-            # Atualiza tempo no lugar atual
             ESTADO["tempo_no_lugar"] += intervalo
             ESTADO["rodada"] = rodada
             ESTADO["total_rodadas"] += 1
 
-            # Simula progresso do jogo (troféus, peso, itens na bolsa)
-            ganho_trofeu = random.randint(0, 3)
-            ganho_peso = random.randint(0, 5)
-            ganho_item = random.randint(0, 2)
-            ESTADO["trofeus_coletados"] += ganho_trofeu
-            ESTADO["pesos_pegos"] += ganho_peso
-            ESTADO["bolsa_slots_ocupados"] = min(
-                ESTADO.get("bolsa_slots_ocupados", 0) + ganho_item,
-                HUNTERA_BOLSA_SLOTES
-            )
-            ESTADO["itens_na_bolsa"] = ESTADO["bolsa_slots_ocupados"]
+            # Rota de lugar a cada 20 rodadas (so no modo simulado)
+            if not (ENGINE and ENGINE.running):
+                if rodada % 20 == 0 or ESTADO["tempo_no_lugar"] > 300:
+                    if HUNTERA_SYSTEM_SELECAO_AUTO:
+                        lugar_nome, lugar_dados = selecionar_lugar_caca()
+                        ESTADO["lugar_atual"] = lugar_nome
+                        ESTADO["tempo_no_lugar"] = 0
+                        ESTADO["mudanca_lugar_rodada"] = rodada
+                        ESTADO["ultimo_lugar_farm"] = lugar_nome
+                        logging.info("[ROTA] Novo lugar: {} - {}".format(lugar_nome, lugar_dados.get("area", "N/A")))
 
-            # A cada X rodadas ou Y minutos, muda de lugar para evitar monotonia
-            # e para evitar que a bolsa encher muito rápido em um só lugar
-            if rodada % 20 == 0 or ESTADO["tempo_no_lugar"] > 300:
-                logging.info("[ROTA] Mudando de lugar após {} rodadas/tempo".format(rodada))
-                if HUNTERA_SYSTEM_SELECAO_AUTO:
-                    lugar_nome, lugar_dados = selecionar_lugar_caca()
-                    ESTADO["lugar_atual"] = lugar_nome
-                    ESTADO["tempo_no_lugar"] = 0
-                    ESTADO["mudanca_lugar_rodada"] = rodada
-                    ESTADO["ultimo_lugar_farm"] = lugar_nome
-                    logging.info("[ROTA] Novo lugar: {} - {}".format(lugar_nome, lugar_dados.get("area", "N/A")))
-
-            # Log de status a cada 10 rodadas
             if rodada % 10 == 0:
+                engine_status = "LIVE" if (ENGINE and ENGINE.running) else "SIM"
                 logging.info(
-                    "[HUNTERA] Rodada {} | Lugar: {} | Bolsa: {}/{} slots | Troféus: {} | Peso: {} | Risco: {} | Cidade: {}".format(
-                        rodada,
-                        ESTADO["lugar_atual"],
+                    "[HUNTERA] Rodada {} | Lugar: {} | Bolsa: {}/{} | Troféus: {} | Peso: {} | Engine: {}".format(
+                        rodada, ESTADO["lugar_atual"],
                         ESTADO.get("bolsa_slots_ocupados", 0), HUNTERA_BOLSA_SLOTES,
-                        ESTADO["trofeus_coletados"],
-                        ESTADO["pesos_pegos"],
-                        HUNTERA_LUGARES_CACA.get(ESTADO["lugar_atual"], {}).get("risco", "N/A"),
-                        "SIM" if ESTADO["indo_cidade"] else "NÃO"
+                        ESTADO["trofeus_coletados"], ESTADO["pesos_pegos"], engine_status
                     )
                 )
 
-            # Salva estado periodicamente
             salvar_posicoes([])
             salvar_resultados({
                 "total_rodadas": ESTADO["total_rodadas"],
@@ -353,13 +401,14 @@ def monitor_loop():
                 "indo_cidade": ESTADO["indo_cidade"],
             })
 
-            # Envia update no Telegram a cada 30 min (~225 rodadas)
+            # Telegram a cada 30 min (~225 rodadas)
             if rodada % 225 == 0:
                 try:
-                    msg = "🟢 Huntera 30min | Rodadas: {} | Lugar: {} | Troféus: {} | Peso: {}g | Bolsa: {}/{}".format(
+                    engine_status = "LIVE" if (ENGINE and ENGINE.running) else "SIM"
+                    msg = "🟢 Huntera 30min | Rodadas: {} | Lugar: {} | Troféus: {} | Peso: {}g | Bolsa: {}/{} | Engine: {}".format(
                         ESTADO["total_rodadas"], ESTADO["lugar_atual"],
                         ESTADO["trofeus_coletados"], ESTADO["pesos_pegos"],
-                        ESTADO.get("bolsa_slots_ocupados", 0), HUNTERA_BOLSA_SLOTES)
+                        ESTADO.get("bolsa_slots_ocupados", 0), HUNTERA_BOLSA_SLOTES, engine_status)
                     enviar_mensagem(msg)
                 except Exception as e:
                     logging.error("[TELEGRAM] falha: {}".format(e))
@@ -467,6 +516,7 @@ def health():
 @app.route("/status")
 def status():
     r = carregar_resultados()
+    engine_vivo = ENGINE is not None and ENGINE.running if ENGINE else False
     return {
         "bot": "huntera",
         "status": "online",
@@ -480,6 +530,8 @@ def status():
         "horario_servidor": HUNTERA_HORARIO_SERVIDOR,
         "bolsa_slots": "{} / {}".format(ESTADO.get("bolsa_slots_ocupados", 0), HUNTERA_BOLSA_SLOTES),
         "indo_cidade": ESTADO["indo_cidade"],
+        "engine_playwright": engine_vivo,
+        "engine_available": ENGINE_AVAILABLE,
     }
 
 
