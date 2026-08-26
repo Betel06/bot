@@ -48,6 +48,7 @@ from spot.config import PARES, STOP_PCT, ROI_TABELA, INTERVALO_MONITOR
 from spot.strategy import analisar
 from spot.telegram import carregar_config, enviar_mensagem, editar_mensagem, fixar_mensagem, formatar_sinal
 from core.dados import buscar_historico
+from core.risk_manager import avaliar_trade, max_drawdown_protection
 
 
 POSICOES_FILE = os.path.join(BOT_DIR, "logs", "posicoes.json")
@@ -483,6 +484,24 @@ def monitor_loop():
                 ja_aberto = any(p["par"] == s["par"] for p in posicoes_abertas)
 
                 if not ja_aberto:
+                    capital_atual = ENTRADA_USD * 5 + resultados.get("total_lucro", 0)
+                    capital_atual = max(capital_atual, 1.0)
+
+                    aval = avaliar_trade(
+                        s["preco"], s["stop"], s["alvo"],
+                        capital_atual, 0.02, 1
+                    )
+
+                    dd = max_drawdown_protection(BANCO_SPOT, BANCO_SPOT + resultados.get("total_lucro", 0))
+
+                    if dd["deve_parar"]:
+                        logging.warning("[RISCO] Drawdown maximo atingido ({}%), posicao bloqueada".format(dd["dd_pct"]))
+                        continue
+
+                    if not aval.get("rr_aceitavel"):
+                        logging.info("[RISCO] R:R {} abaixo do minimo, ignorando".format(aval.get("rr")))
+                        continue
+
                     abriu_posicao = True
                     posicoes_abertas.append({
                         "par": s["par"],
@@ -492,9 +511,11 @@ def monitor_loop():
                         "alvo": s["alvo"],
                         "data": agora.strftime("%d/%m %H:%M"),
                         "preco_atual": s["preco"],
+                        "risco_valor": aval.get("risco_valor", 0),
                     })
 
-                    logging.info("[SINAL] {} {} | ${:.6f}".format(s["sinal"], s["par"], s["preco"]))
+                    logging.info("[SINAL] {} {} | ${:.6f} | R:R {}".format(
+                        s["sinal"], s["par"], s["preco"], aval.get("rr", 0)))
 
                     if telegram_ok:
                         enviar_mensagem(formatar_sinal(s))

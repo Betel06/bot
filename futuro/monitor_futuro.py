@@ -47,6 +47,7 @@ logging.getLogger().addHandler(_bufh)
 from futuro.config import PARES, PARES_POR_RODADA, INTERVALO_MONITOR, ENTRADA_USD, ALAVANCAGEM, MERCADO, TIMEOUT_POSICAO_SEGUNDOS, RR_MINIMO
 from core.ai_brain import analisar_com_ia, ia_ativa
 from core.dados import buscar_historico
+from core.risk_manager import avaliar_trade, max_drawdown_protection, risco_diario
 from futuro.telegram import carregar_config, enviar_mensagem, formatar_sinal, formatar_resultado
 
 POSICOES_FILE = os.path.join(BOT_DIR, "logs", "futuro_posicoes.json")
@@ -272,6 +273,28 @@ def monitor_loop():
                 ja_aberto = any(p["par"] == s["par"] for p in posicoes_abertas)
 
                 if not ja_aberto:
+                    capital_atual = ENTRADA_USD * 5 + resultados.get("total_lucro", 0)
+                    capital_atual = max(capital_atual, 1.0)
+
+                    aval = avaliar_trade(
+                        s["preco"], s["stop"], s["alvo"],
+                        capital_atual, 0.02, ALAVANCAGEM
+                    )
+
+                    dd = max_drawdown_protection(10.0, 10.0 + resultados.get("total_lucro", 0))
+
+                    if dd["deve_parar"]:
+                        logging.warning("[RISCO] Drawdown maximo atingido ({}%), posicao bloqueada".format(dd["dd_pct"]))
+                        continue
+
+                    if aval.get("risco_pesado"):
+                        logging.warning("[RISCO] Trade arrisca mais de 10% do capital, ignorando")
+                        continue
+
+                    if not aval.get("rr_aceitavel"):
+                        logging.info("[RISCO] R:R {} abaixo do minimo, ignorando".format(aval.get("rr")))
+                        continue
+
                     abriu_posicao = True
                     posicoes_abertas.append({
                         "par": s["par"],
@@ -281,9 +304,12 @@ def monitor_loop():
                         "alvo": s["alvo"],
                         "data": agora.strftime("%d/%m %H:%M"),
                         "preco_atual": s["preco"],
+                        "risco_valor": aval.get("risco_valor", 0),
                     })
 
-                    logging.info("[SINAL] {} {} | ${:.6f}".format(s["sinal"], s["par"], s["preco"]))
+                    logging.info("[SINAL] {} {} | ${:.6f} | R:R {} | Risco ${:.2f}".format(
+                        s["sinal"], s["par"], s["preco"],
+                        aval.get("rr", 0), aval.get("risco_valor", 0)))
 
                     if telegram_ok:
                         enviar_mensagem(formatar_sinal(s))
