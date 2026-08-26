@@ -12,7 +12,10 @@ from datetime import datetime
 
 logger = logging.getLogger("huntera_engine")
 
-SESSION_FILE = os.path.join(os.path.dirname(__file__), "huntera_session.json")
+SESSION_FILE = os.environ.get("HUNTERA_SESSION_PATH",
+    os.path.join(os.path.dirname(__file__), "huntera_session.json"))
+# Render monta secret files em /etc/secrets/
+RENDER_SESSION = "/etc/secrets/huntera_session.json"
 GAME_URL = "https://huntera.com.br/game"
 LOCALSTORAGE_FILE = os.path.join(os.path.dirname(__file__), "huntera_localstorage.json")
 
@@ -49,15 +52,18 @@ class HunteraBot:
 
     def _load_session(self):
         """Carrega sessão salva."""
-        if not os.path.exists(SESSION_FILE):
-            logger.error("Sessão não encontrada! Execute login_huntera.py primeiro.")
-            return False
-        try:
-            with open(SESSION_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Erro ao carregar sessão: {e}")
-            return False
+        # Tenta Render secrets primeiro, depois local
+        for path in [RENDER_SESSION, SESSION_FILE]:
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    logger.info(f"Sessão carregada de: {path}")
+                    return data
+                except Exception as e:
+                    logger.error(f"Erro ao carregar {path}: {e}")
+        logger.error("Sessão não encontrada! Execute login_huntera.py primeiro.")
+        return False
 
     def _save_session(self):
         """Salva sessão atual."""

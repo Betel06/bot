@@ -3,7 +3,9 @@ HUNTERA LOGIN - Execute uma vez no PC
 Abre navegador visível, você loga com Google, e salva a sessão pro bot usar.
 """
 import os
+import sys
 import json
+import time
 from playwright.sync_api import sync_playwright
 
 SESSION_FILE = os.path.join(os.path.dirname(__file__), "huntera_session.json")
@@ -33,20 +35,49 @@ def main():
 
         # Navega pro jogo
         print("[1/4] Abrindo Huntera...")
-        page.goto(GAME_URL, wait_until="networkidle", timeout=30000)
+        page.goto(GAME_URL, wait_until="domcontentloaded", timeout=60000)
         print(f"  URL: {page.url}")
         print(f"  Titulo: {page.title()}")
 
         print()
         print(">>> FAÇA O LOGIN COM GOOGLE AGORA <<<")
-        print(">>> Quando estiver dentro do jogo, aperte ENTER aqui <<<")
+        print(">>> O script vai detectar quando estiver logado <<<")
         print()
 
-        input("Pressione ENTER quando estiver logado no jogo...")
+        # Auto-detecta login (verifica a cada 2 segundos por 5 minutos)
+        print("[2/4] Aguardando login (max 5 min)...")
+        logado = False
+        for tentativa in range(150):  # 150 * 2s = 5 min
+            time.sleep(2)
+            url_atual = page.url
+            try:
+                # Verifica se saiu da tela de login
+                login_buttons = page.query_selector_all('text="Logar com email"')
+                if not login_buttons:
+                    # Pode estar logado - verifica mais
+                    body = page.inner_text("body")
+                    # Procura indicadores de jogo logado
+                    indicadores = ["Hunt", "Character", "Inventory", "Level", "HP", "Mana", "Gold"]
+                    for ind in indicadores:
+                        if ind.lower() in body.lower():
+                            logado = True
+                            print(f"  Login detectado! (encontrou: {ind})")
+                            break
+                    if not logado and "/game" in url_atual and len(body) > 200:
+                        # URL do jogo + conteúdo na página = provavelmente logado
+                        logado = True
+                        print(f"  Login detectado pela URL + conteúdo")
+                if logado:
+                    break
+            except Exception:
+                pass
+            if tentativa % 15 == 0 and tentativa > 0:
+                print(f"  Aguardando... ({tentativa * 2}s)")
 
-        # Verifica se logou
-        current_url = page.url
-        print(f"[2/4] URL atual: {current_url}")
+        if not logado:
+            print("  Timeout - tentando salvar mesmo assim...")
+
+        print(f"[2/4] URL atual: {page.url}")
 
         # Tenta pegar dados da sessão
         print("[3/4] Salvando sessão...")
