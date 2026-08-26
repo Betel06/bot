@@ -20,6 +20,9 @@ BRT = timezone(timedelta(hours=-3))  # horario de Brasilia fixo (independe do se
 import requests
 
 from core.dados import buscar_historico
+from core.indicadores import (
+    calcular_rsi, calcular_ema, calcular_adx, calcular_supertrend, calcular_atr
+)
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -49,6 +52,15 @@ CONTEXTO DA OPERACAO: voce opera FUTUROS de cripto em DAY TRADE (ciclos rapidos,
 - Long e Short sao igualmente naturais: opere os dois lados conforme a estrutura.
 - Velocidade importa: priorize o que acontece no 15m/5m, usando o 1h so como direcao geral.
 - Disciplina de risco e inegociavel: sem alavancagem alta sem confluencia; se o R:R minimo nao aparecer, NADA.
+
+FILTRO DE TENDENCIA (OBRIGATORIO):
+- Voce recebe indicadores pre-calculados (EMA, RSI, ADX, SuperTrend). USE-OS.
+- Se Tendencia EMA = "BAIXA" ou "BAIXA FORTE": so permita VENDA (SHORT). COMPRA e PROIBIDO.
+- Se Tendencia EMA = "ALTA" ou "ALTA FORTE": so permita COMPRA (LONG). VENDA e PROIBIDO.
+- Se Tendencia EMA = "LATERAL": os dois lados sao permitidos, mas so com confluencia forte.
+- Se SuperTrend = "VENDA": nao abra COMPRA. Se SuperTrend = "COMPRA": nao abra VENDA.
+- Se ADX < 20: tendencia fraca, considere NADA (mercado lateral sem direcao clara).
+- R:R MINIMO = 2.0. Abaixo disso, NADA.
 """.strip()
 
 PROMPT_B3 = """
@@ -117,6 +129,55 @@ def _fmt_candles(df, n):
     return "\n".join(linhas)
 
 
+def _calcular_indicadores(df):
+    """Calcula indicadores tecnicos e retorna string formatada pro prompt."""
+    if df is None or len(df) < 30:
+        return ""
+
+    close = df["close"]
+    high = df["high"]
+    low = df["low"]
+
+    ema9 = calcular_ema(close, 9).iloc[-1]
+    ema21 = calcular_ema(close, 21).iloc[-1]
+    ema50 = calcular_ema(close, 50).iloc[-1] if len(df) >= 50 else None
+    rsi = calcular_rsi(close, 14).iloc[-1]
+    adx, plus_di, minus_di = calcular_adx(high, low, close, 14)
+    adx_val = adx.iloc[-1]
+    plus_di_val = plus_di.iloc[-1]
+    minus_di_val = minus_di.iloc[-1]
+    st, st_dir = calcular_supertrend(high, low, close, 10, 3)
+    st_direcao = "COMPRA" if st_dir.iloc[-1] == 1 else "VENDA"
+    atr = calcular_atr(high, low, close, 14).iloc[-1]
+
+    if ema9 > ema21:
+        tendencia = "ALTA"
+    elif ema9 < ema21:
+        tendencia = "BAIXA"
+    else:
+        tendencia = "LATERAL"
+
+    if ema50 is not None:
+        if ema9 > ema21 > ema50:
+            tendencia = "ALTA FORTE"
+        elif ema9 < ema21 < ema50:
+            tendencia = "BAIXA FORTE"
+
+    partes = [
+        "--- INDICADORES PRE-CALCULADOS (1h) ---",
+        "EMA9: {:.6g} | EMA21: {:.6g} | EMA50: {}".format(
+            ema9, ema21, "{:.6g}".format(ema50) if ema50 else "N/A"),
+        "Tendencia EMA: {} (EMA9 vs EMA21 vs EMA50)".format(tendencia),
+        "RSI(14): {:.1f}".format(rsi),
+        "ADX(14): {:.1f} | +DI: {:.1f} | -DI: {:.1f} (forca da tendencia)".format(
+            adx_val, plus_di_val, minus_di_val),
+        "SuperTrend(10,3): {} (direcao atual)".format(st_direcao),
+        "ATR(14): {:.6g} (volatilidade)".format(atr),
+        "--- FIM INDICADORES ---",
+    ]
+    return "\n".join(partes)
+
+
 def _buscar_candles(par, intervalo, n, mercado):
     if mercado == "b3":
         from core.dados_b3 import buscar_historico_b3
@@ -136,6 +197,11 @@ def coletar_contexto(par, mercado="spot"):
                 continue
             partes.append("\n=== CANDLES {} (mais recentes por ultimo) ===".format(tf))
             partes.append(_fmt_candles(df, n))
+
+            if tf == "1h":
+                indicadores = _calcular_indicadores(df)
+                if indicadores:
+                    partes.append("\n" + indicadores)
         except Exception as e:
             partes.append("\n=== CANDLES {}: erro ({}) ===".format(tf, e))
 
@@ -331,9 +397,12 @@ def analisar_com_ia(par, mercado="spot", estudo=False):
                     par, final["sinal"]))
             return None
 
-        if float(final.get("rr") or 0) < 1.5:
-            logging.warning("[IA] {} aceito por julgamento da IA com R:R {}".format(
-                par, final.get("rr")))
+        rr = float(final.get("rr") or 0)
+        if rr < 2.0:
+            logging.warning("[IA] {} REJEITADO R:R {} < 2.0 | {}".format(
+                par, rr, str(final.get("motivo"))[:100]))
+            _registrar(par, bruto, final, "R:R {} < 2.0".format(rr), mercado)
+            return None
 
         logging.info("[IA] SINAL {} {} conf={} rr={} | {}".format(
             final["sinal"], par, final.get("confianca"), final.get("rr"),

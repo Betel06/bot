@@ -17,6 +17,10 @@ os.chdir(BOT_DIR)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+# logs do servidor tambem em horario de Brasilia
+for _h in logging.getLogger().handlers:
+    _h.formatter.converter = lambda *a: datetime.now(BRT).timetuple()
+
 
 class _FiltroHealth(logging.Filter):
     def filter(self, record):

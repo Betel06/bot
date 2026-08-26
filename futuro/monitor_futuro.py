@@ -17,6 +17,10 @@ os.chdir(BOT_DIR)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+# logs do servidor tambem em horario de Brasilia
+for _h in logging.getLogger().handlers:
+    _h.formatter.converter = lambda *a: datetime.now(BRT).timetuple()
+
 
 class _FiltroHealth(logging.Filter):
     def filter(self, record):
@@ -40,7 +44,7 @@ _bufh = _BufferHandler()
 _bufh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logging.getLogger().addHandler(_bufh)
 
-from futuro.config import PARES, PARES_POR_RODADA, INTERVALO_MONITOR, ENTRADA_USD, ALAVANCAGEM, MERCADO
+from futuro.config import PARES, PARES_POR_RODADA, INTERVALO_MONITOR, ENTRADA_USD, ALAVANCAGEM, MERCADO, TIMEOUT_POSICAO_SEGUNDOS, RR_MINIMO
 from core.ai_brain import analisar_com_ia, ia_ativa
 from core.dados import buscar_historico
 from futuro.telegram import carregar_config, enviar_mensagem, formatar_sinal, formatar_resultado
@@ -82,6 +86,7 @@ def carregar_resultados():
 
 def checar_posicoes(posicoes_abertas):
     resultado = []
+    agora = datetime.now(BRT)
     for pos in list(posicoes_abertas):
         try:
             df = buscar_historico(pos["par"], "1m", 10, mercado=MERCADO)
@@ -92,16 +97,30 @@ def checar_posicoes(posicoes_abertas):
             preco_baixa = float(df["low"].iloc[-1])
 
             fechou = None
-            if pos["direcao"] == "COMPRA":
-                if preco_baixa <= pos["stop"]:
-                    fechou = ("STOP LOSS", pos["stop"])
-                elif preco_alta >= pos["alvo"]:
-                    fechou = ("TAKE PROFIT", pos["alvo"])
-            else:
-                if preco_alta >= pos["stop"]:
-                    fechou = ("STOP LOSS", pos["stop"])
-                elif preco_baixa <= pos["alvo"]:
-                    fechou = ("TAKE PROFIT", pos["alvo"])
+
+            # Timeout: fecharposicao apos 2 horas
+            try:
+                data_pos = datetime.strptime(pos["data"], "%d/%m %H:%M").replace(tzinfo=BRT)
+                idade_seg = (agora - data_pos).total_seconds()
+                if idade_seg > TIMEOUT_POSICAO_SEGUNDOS:
+                    preco_saida = float(df["close"].iloc[-1])
+                    fechou = ("TIMEOUT", preco_saida)
+                    logging.info("[TIMEOUT] {} aberta ha {:.0f}min, fechando no preco atual".format(
+                        pos["par"], idade_seg / 60))
+            except Exception:
+                pass
+
+            if not fechou:
+                if pos["direcao"] == "COMPRA":
+                    if preco_baixa <= pos["stop"]:
+                        fechou = ("STOP LOSS", pos["stop"])
+                    elif preco_alta >= pos["alvo"]:
+                        fechou = ("TAKE PROFIT", pos["alvo"])
+                else:
+                    if preco_alta >= pos["stop"]:
+                        fechou = ("STOP LOSS", pos["stop"])
+                    elif preco_baixa <= pos["alvo"]:
+                        fechou = ("TAKE PROFIT", pos["alvo"])
 
             if fechou:
                 tipo, saida = fechou
@@ -199,7 +218,7 @@ def monitor_loop():
 
     if telegram_ok:
         try:
-            enviar_mensagem("🔵⚡ TRADER FUTURO ONLINE no Render 24/7!\nDay trade com IA (SMC) em 12 pares: BTC, ETH, SOL, XRP, DOGE, AVAX, LINK, SUI, BNB, LTC, COLLECT e BTW.")
+            enviar_mensagem("🔵⚡ TRADER FUTURO ONLINE no Render 24/7!\nDay trade com IA (SMC) em 10 pares: BTC, ETH, SOL, XRP, DOGE, AVAX, LINK, SUI, BNB, LTC.\nFiltros: R:R >= 2.0 | Trend filter | Timeout 2h")
         except Exception as e:
             logging.error("[TELEGRAM] falha no startup: {}".format(e))
 
@@ -327,9 +346,14 @@ def criar_app():
             "alavancagem": ALAVANCAGEM,
             "pl_usd": round(r["total_lucro"], 4),
             "posicoes_abertas": len(p),
-            "abertas": [{"par": x["par"], "direcao": x.get("direcao", "")} for x in p],
+            "abertas": [{"par": x["par"], "direcao": x.get("direcao", ""), "data": x.get("data", "")} for x in p],
             "historico": r.get("historico", [])[-12:],
             "ia": ESTADO,
+            "filtros": {
+                "rr_minimo": RR_MINIMO,
+                "timeout_h": TIMEOUT_POSICAO_SEGUNDOS // 3600,
+                "pares": len(PARES),
+            },
         }
 
     @app.route("/debug")
