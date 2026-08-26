@@ -213,6 +213,13 @@ class HunteraBot:
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
+                "--disable-web-security",
+                "--single-process",
+                "--disable-extensions",
+                "--disable-background-networking",
+                "--disable-default-apps",
+                "--disable-sync",
+                "--no-first-run",
             ]
         )
 
@@ -403,11 +410,56 @@ class HunteraBot:
                 self._screenshot("erro_estado")
 
         except Exception as e:
-            logger.error("[ENGINE] Erro no ciclo: {}".format(e))
-            logger.error(traceback.format_exc())
-            self._screenshot("erro_ciclo")
+            err_str = str(e)
+            logger.error("[ENGINE] Erro no ciclo: {}".format(err_str))
+            # Se Chromium crashou, reinicia
+            if "crashed" in err_str.lower() or "target closed" in err_str.lower():
+                logger.warning("[ENGINE] CHROMIUM CRASHOU! Reiniciando...")
+                self._reiniciar_browser()
+            else:
+                logger.error(traceback.format_exc())
+                self._screenshot("erro_ciclo")
 
         return self.estado
+
+    def _reiniciar_browser(self):
+        """Reinicia o browser apos crash."""
+        try:
+            self.browser.close()
+        except Exception:
+            pass
+        try:
+            time.sleep(5)
+            pw = self._start_pw()
+            self.browser = pw.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-web-security",
+                    "--single-process",
+                ]
+            )
+            storage = self._load_session()
+            self.context = self.browser.new_context(
+                storage_state=storage or {},
+                viewport={"width": 1280, "height": 800},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            )
+            self.context.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
+            self.page = self.context.new_page()
+            logger.info("[ENGINE] Browser reiniciado! Navegando pro jogo...")
+            try:
+                self.page.goto(GAME_URL, wait_until="networkidle", timeout=45000)
+            except Exception:
+                pass
+            time.sleep(5)
+            self._wait_for_game(timeout=30)
+            logger.info("[ENGINE] Browser reiniciado com sucesso!")
+        except Exception as e:
+            logger.error("[ENGINE] Falha ao reiniciar browser: {}".format(e))
 
     def _ir_cidade(self):
         """Tenta ir para a cidade/vender."""
