@@ -257,10 +257,6 @@ def monitor_loop():
         ESTADO["tempo_no_lugar"] = 0
         ESTADO["ultimo_lugar_farm"] = lugar_nome
         logging.info("[SYSTEM] Lugar de caça selecionado: {} - {}".format(lugar_nome, lugar_dados.get("area", "N/A")))
-
-    # Mensagem de início no Telegram
-    enviar_mensagem("🟢 Bot Huntera iniciado!\nLugar: {}\nModo: {}\nNotificações: a cada 30min".format(
-        ESTADO["lugar_atual"], HUNTERA_MODO))
     else:
         # Fica no lugar fixo configurado ou no último
         lugar_fixo = os.environ.get("HUNTERA_LUGAR_FIXO", "L1_Nova_Reserva")
@@ -268,6 +264,10 @@ def monitor_loop():
         ESTADO["lugar_atual"] = lugar_fixo
         if lugar_dados:
             ESTADO["tempo_no_lugar"] = 0
+
+    # Mensagem de início no Telegram
+    enviar_mensagem("🟢 Bot Huntera iniciado!\nLugar: {}\nModo: {}\nNotificações: a cada 30min".format(
+        ESTADO["lugar_atual"], HUNTERA_MODO))
 
     # Se segurança ativa, verifica risco
     if ESTADO["seguranca_ativo"]:
