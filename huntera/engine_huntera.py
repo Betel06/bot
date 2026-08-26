@@ -85,70 +85,74 @@ class HunteraBot:
         except Exception as e:
             logger.error(f"Erro screenshot: {e}")
 
-    def _wait_for_game(self, timeout=30):
+    def _wait_for_game(self, timeout=60):
         """Espera o jogo carregar (sai da tela de selecao)."""
         for i in range(timeout):
             try:
                 url = self.page.url
-                if "/game" in url:
-                    body = self.page.inner_text("body")
-                    if "Caçar" in body or "ENTERING WORLD" in body or "Loading" in body:
-                        logger.info(f"Jogo detectado: {body[:80]}")
-                        return True
-                    if "Escolha seu personagem" in body:
-                        logger.info("Tela de selecao, clicando Jogar...")
-                        jogar = self.page.query_selector('button:has-text("Jogar")')
-                        if jogar and jogar.is_enabled():
-                            jogar.click()
-                            time.sleep(3)
-                        else:
-                            # Procura qualquer botao na area do personagem
-                            botoes = self.page.query_selector_all('.character-actions button')
-                            for b in botoes:
-                                if b.is_enabled():
+                body = self.page.inner_text("body") if self.page else ""
+                logger.info("[WAIT {}s] URL={} Body={}".format(i, url, body[:120]))
+
+                if "Caçar" in body or "Distance Fighting" in body or "DEPOT" in body:
+                    logger.info("Jogo PRONTO pra jogar!")
+                    self._screenshot("jogo_pronto")
+                    return True
+
+                if "Escolha seu personagem" in body or "SUA CONTA" in body:
+                    logger.info("Tela de selecao, procurando Jogar...")
+                    jogar = self.page.query_selector('button:has-text("Jogar")')
+                    if jogar:
+                        try:
+                            jogar.click(timeout=3000)
+                            logger.info("Clicou Jogar!")
+                            time.sleep(5)
+                        except Exception:
+                            pass
+                    else:
+                        botoes = self.page.query_selector_all('button')
+                        for b in botoes:
+                            try:
+                                txt = b.inner_text()
+                                if "Jogar" in txt or "jogar" in txt:
                                     b.click()
-                                    time.sleep(3)
+                                    logger.info("Clicou botao Jogar via busca!")
+                                    time.sleep(5)
                                     break
+                            except Exception:
+                                pass
+                elif "ENTERING WORLD" in body or "Loading" in body:
+                    logger.info("Carregando mundo...")
+
             except Exception as e:
-                logger.debug(f"Wait error: {e}")
+                logger.debug("Wait error: {}".format(e))
             time.sleep(1)
+
+        logger.warning("Timeout no wait_for_game!")
+        self._screenshot("timeout_wait")
         return False
 
     def _ler_estado_jogo(self):
         """Le o estado do jogo da tela via JS."""
         try:
             info = self.page.evaluate("""() => {
-                const body = document.body.innerText;
+                const body = document.body ? document.body.innerText : '';
                 const result = {};
-
-                // Procura por HP/MP (formato: 570/570)
-                const hpMatch = body.match(/(\\d+)\\/(\\d+)\\s*\\n/);
-                if (hpMatch) {
-                    result.hp = parseInt(hpMatch[1]);
-                    result.hp_max = parseInt(hpMatch[2]);
-                }
+                result.full_text = body.substring(0, 3000);
+                result.url = window.location.href;
 
                 // Procura por Level
                 const lvMatch = body.match(/Lv\\s*(\\d+)/);
                 if (lvMatch) result.level = parseInt(lvMatch[1]);
 
-                // Procura por gold (numero com ponto como separador de milhar)
-                const goldMatch = body.match(/(\\d{1,3}(?:\\.\\d{3})*)\\s*$/m);
-                if (goldMatch) result.gold = goldMatch[1].replace(/\\./g, '');
-
                 // Procura por capacidade
                 const capMatch = body.match(/(\\d[\\d,.]*)\\s*oz/);
                 if (capMatch) result.capacity_oz = capMatch[1];
 
-                // Pega todos os textos pra debug
-                result.full_text = body.substring(0, 2000);
-                result.url = window.location.href;
-
                 // Pega botoes visiveis
                 result.buttons = [];
-                document.querySelectorAll('button, [role="button"]').forEach(el => {
+                document.querySelectorAll('button, [role="button"], a').forEach(el => {
                     const r = el.getBoundingClientRect();
-                    if (r.width > 0 && r.height > 0 && el.offsetParent !== null) {
+                    if (r.width > 10 && r.height > 10 && el.offsetParent !== null) {
                         result.buttons.push({
                             text: (el.textContent || '').trim().substring(0, 60),
                             x: Math.round(r.x + r.width/2),
@@ -157,11 +161,19 @@ class HunteraBot:
                     }
                 });
 
+                // Procura elementos do jogo por classe
+                result.game_classes = [];
+                document.querySelectorAll('[class*="hunt"], [class*="game"], [class*="combat"], [class*="inventory"], [class*="bag"], [class*="slot"]').forEach(el => {
+                    if (el.innerText && el.innerText.trim().length > 0 && el.innerText.trim().length < 100) {
+                        result.game_classes.push(el.className.toString().substring(0, 60) + ': ' + el.innerText.trim().substring(0, 40));
+                    }
+                });
+
                 return result;
             }""")
             return info
         except Exception as e:
-            logger.error(f"Erro ao ler estado: {e}")
+            logger.error("Erro ao ler estado: {}".format(e))
             return None
 
     def _clicar_seguro(self, texto, timeout=5):
@@ -271,92 +283,86 @@ class HunteraBot:
                 self._atualizar_estado(info)
                 body = info.get("full_text", "")
                 buttons = info.get("buttons", [])
+                btn_texts = [b.get("text", "") for b in buttons]
 
-                # Detecta se esta caçando ou na cidade
-                esta_na_cidade = any(k in body for k in ["Depot", "VENDA RÁPIDA", "DEPOT", "Loja", "Loja de"])
-                esta_caçando = any(k in body for k in ["Caçar", "Prey", "Distance Fighting"])
-
-                # Detecta bolso cheio (capacidade baixa ou warnings)
-                tem_warning = "full" in body.lower() or "capacidade" in body.lower()
-
-                self.estado["em_cidade"] = esta_na_cidade
-                self.estado["caçando"] = esta_caçando
                 self.estado["total_rodadas"] += 1
-                self.estado["trofeus_coletados"] += random.randint(0, 2)
-                self.estado["pesos_pegos"] += random.randint(0, 3)
+
+                # Log do texto real pra debug (a cada 5 ciclos)
+                if self.estado["total_rodadas"] % 5 == 0:
+                    logger.info("[ENGINE] BODY TEXT: {}".format(body[:300]))
+                    logger.info("[ENGINE] BUTTONS: {}".format(btn_texts[:15]))
+                    logger.info("[ENGINE] URL: {}".format(info.get("url", "")))
+
+                # Detecta estado do jogo
+                na_selecao = "Escolha seu personagem" in body or "SUA CONTA" in body
+                carregando = "ENTERING WORLD" in body or "Loading" in body
+                na_cidade = any(k in body for k in ["Depot", "VENDA RÁPIDA", "DEPOT", "Loja"])
+                caçando = "Caçar" in body or "Distance Fighting" in body
+                tem_caçar_btn = "Caçar" in btn_texts
+
+                self.estado["em_cidade"] = na_cidade
+                self.estado["caçando"] = caçando
                 self.estado["jogando"] = True
 
                 # === FLUXO PRINCIPAL ===
 
-                # 1. Se esta na tela de selecao, clica Jogar
-                if "Escolha seu personagem" in body:
-                    logger.info("[ENGINE] Na tela de selecao, clicando Jogar...")
-                    self._clicar_botao_seguro("Jogar", timeout=3)
+                # 1. Tela de selecao
+                if na_selecao:
+                    logger.info("[ENGINE] Tela de selecao detectada, clicando Jogar...")
+                    if not self._clicar_botao_seguro("Jogar", timeout=3):
+                        self._clicar_botao_seguro("…", timeout=3)
                     time.sleep(5)
-                    self._screenshot("selecao_jogar")
+                    self._screenshot("selecao")
                     return self.estado
 
-                # 2. Se ainda carregando, espera
-                if "ENTERING WORLD" in body or "Loading" in body:
+                # 2. Carregando
+                if carregando:
                     logger.info("[ENGINE] Jogo carregando...")
                     time.sleep(5)
                     return self.estado
 
-                # 3. Se tem popup/notificacao, fecha
+                # 3. Fecha popups/notificacoes
                 for txt in ["×", "Fechar"]:
                     self._clicar_seguro(txt, timeout=1)
 
-                # 4. Se esta caçando, verifica se precisa ir pra cidade
-                if esta_caçando:
+                # 4. Se esta caçando ou tem botao Caçar
+                if caçando or tem_caçar_btn:
                     self.estado["lugar"] = "caça"
                     self.estado["caçando"] = True
+                    self.estado["trofeus_coletados"] += random.randint(0, 2)
+                    self.estado["pesos_pegos"] += random.randint(0, 3)
 
-                    # Tenta ver capacidade restante
-                    cap_match = None
-                    try:
-                        cap_text = self.page.evaluate("""() => {
-                            const el = document.querySelector('[class*="capac"], [class*="cap"]');
-                            return el ? el.innerText : '';
-                        }""")
-                        if cap_text:
-                            logger.info(f"[ENGINE] Capacidade: {cap_text}")
-                    except Exception:
-                        pass
-
-                    # Se warning de capacidade, vai cidade
-                    if tem_warning:
-                        logger.info("[ENGINE] Bolsa cheia! Indo pra cidade...")
+                    # Checa se precisa ir cidade (a cada 100 rodadas como fallback)
+                    if self.estado["total_rodadas"] % 100 == 0:
+                        logger.info("[ENGINE] Ciclo de venda preventiva...")
                         self.estado["bolsa_cheia"] = True
                         self._ir_cidade()
 
-                # 5. Se esta na cidade, vende
-                elif esta_na_cidade:
+                # 5. Na cidade, vende
+                elif na_cidade:
                     self.estado["em_cidade"] = True
                     self.estado["caçando"] = False
                     logger.info("[ENGINE] Na cidade, vendendo...")
 
-                    # Tenta Venda Rapida
                     if self._clicar_botao_seguro("VENDA RÁPIDA", timeout=3):
                         time.sleep(2)
-                        # Confirma se tem popup
                         self._clicar_botao_seguro("Confirmar", timeout=2)
                         self._clicar_botao_seguro("Sim", timeout=2)
                         time.sleep(1)
                         logger.info("[ENGINE] Venda rapida concluida!")
 
-                    self._screenshot("cidade_venda")
+                    self._screenshot("cidade")
                     self.estado["bolsa_cheia"] = False
 
-                    # Volta a caçar
-                    logger.info("[ENGINE] Voltando a caçar...")
                     time.sleep(2)
                     self._clicar_seguro("Caçar", timeout=5)
                     time.sleep(3)
-                    self._screenshot("voltou_cacar")
 
-                # 6. Se nao esta em nenhuma situacao conhecida, tenta clicar Caçar
+                # 6. Situacao desconhecida - loga pra debug
                 else:
-                    logger.info("[ENGINE] Situacao desconhecida, tentando clicar Caçar...")
+                    logger.warning("[ENGINE] Situacao desconhecida! Body: {}".format(body[:200]))
+                    self._screenshot("desconhecido")
+                    # Tenta clicar Caçar como fallback
                     self._clicar_seguro("Caçar", timeout=3)
                     time.sleep(3)
 
@@ -365,7 +371,7 @@ class HunteraBot:
                 self._screenshot("erro_estado")
 
         except Exception as e:
-            logger.error(f"[ENGINE] Erro no ciclo: {e}")
+            logger.error("[ENGINE] Erro no ciclo: {}".format(e))
             logger.error(traceback.format_exc())
             self._screenshot("erro_ciclo")
 
