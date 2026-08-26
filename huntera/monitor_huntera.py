@@ -400,20 +400,20 @@ def carregar_resultados():
 
 
 def carregar_config():
-    try:
-        from core.telegram import carregar_config as _carregar
-        return _carregar()
-    except Exception:
-        import os
-        token = os.environ.get("TELEGRAM_TOKEN")
-        chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-        return token, chat_id
+    token = os.environ.get("TELEGRAM_TOKEN", "")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    return token, chat_id
 
 
 def enviar_mensagem(texto):
+    token = os.environ.get("TELEGRAM_TOKEN", "")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not token or not chat_id:
+        return False, ""
     try:
-        from core.telegram import enviar_mensagem as _enviar
-        return _enviar(texto)
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        resp = requests.post(url, json={"chat_id": chat_id, "text": texto}, timeout=10)
+        return resp.ok, resp.text
     except Exception as e:
         logging.error("[TELEGRAM] erro ao enviar: {}".format(e))
         return False, ""
