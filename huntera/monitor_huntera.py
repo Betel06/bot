@@ -334,15 +334,16 @@ def monitor_loop():
                 "indo_cidade": ESTADO["indo_cidade"],
             })
 
-            # Envia update no Telegram
-            try:
-                msg = "🟢 Huntera Rodada {} | Lugar: {} | Bolsa: {}/{} | Troféus: {} | Peso: {} | Cidade: {}".format(
-                    rodada, ESTADO["lugar_atual"], ESTADO.get("bolsa_slots_ocupados", 0), HUNTERA_BOLSA_SLOTES,
-                    ESTADO["trofeus_coletados"], ESTADO["pesos_pegos"],
-                    "🏢" if ESTADO["indo_cidade"] else "")
-                enviar_mensagem(msg)
-            except Exception as e:
-                logging.error("[TELEGRAM] falha: {}".format(e))
+            # Envia update no Telegram a cada 10 rodadas (não toda hora)
+            if rodada % 10 == 0:
+                try:
+                    msg = "🟢 Huntera Rodada {} | Lugar: {} | Bolsa: {}/{} | Troféus: {} | Peso: {} | Cidade: {}".format(
+                        rodada, ESTADO["lugar_atual"], ESTADO.get("bolsa_slots_ocupados", 0), HUNTERA_BOLSA_SLOTES,
+                        ESTADO["trofeus_coletados"], ESTADO["pesos_pegos"],
+                        "🏢" if ESTADO["indo_cidade"] else "")
+                    enviar_mensagem(msg)
+                except Exception as e:
+                    logging.error("[TELEGRAM] falha: {}".format(e))
 
             logging.info(
                 "[Rodada {}] Lugar: {} | Bolsa: {}/{} | Troféus: {} | Peso: {} | Tempo: {}s".format(
