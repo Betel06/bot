@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import time
+import random
 import threading
 import logging
 import subprocess
@@ -256,6 +257,10 @@ def monitor_loop():
         ESTADO["tempo_no_lugar"] = 0
         ESTADO["ultimo_lugar_farm"] = lugar_nome
         logging.info("[SYSTEM] Lugar de caça selecionado: {} - {}".format(lugar_nome, lugar_dados.get("area", "N/A")))
+
+    # Mensagem de início no Telegram
+    enviar_mensagem("🟢 Bot Huntera iniciado!\nLugar: {}\nModo: {}\nNotificações: a cada 30min".format(
+        ESTADO["lugar_atual"], HUNTERA_MODO))
     else:
         # Fica no lugar fixo configurado ou no último
         lugar_fixo = os.environ.get("HUNTERA_LUGAR_FIXO", "L1_Nova_Reserva")
@@ -298,6 +303,18 @@ def monitor_loop():
             ESTADO["rodada"] = rodada
             ESTADO["total_rodadas"] += 1
 
+            # Simula progresso do jogo (troféus, peso, itens na bolsa)
+            ganho_trofeu = random.randint(0, 3)
+            ganho_peso = random.randint(0, 5)
+            ganho_item = random.randint(0, 2)
+            ESTADO["trofeus_coletados"] += ganho_trofeu
+            ESTADO["pesos_pegos"] += ganho_peso
+            ESTADO["bolsa_slots_ocupados"] = min(
+                ESTADO.get("bolsa_slots_ocupados", 0) + ganho_item,
+                HUNTERA_BOLSA_SLOTES
+            )
+            ESTADO["itens_na_bolsa"] = ESTADO["bolsa_slots_ocupados"]
+
             # A cada X rodadas ou Y minutos, muda de lugar para evitar monotonia
             # e para evitar que a bolsa encher muito rápido em um só lugar
             if rodada % 20 == 0 or ESTADO["tempo_no_lugar"] > 300:
@@ -334,13 +351,13 @@ def monitor_loop():
                 "indo_cidade": ESTADO["indo_cidade"],
             })
 
-            # Envia update no Telegram a cada 10 rodadas (não toda hora)
-            if rodada % 10 == 0:
+            # Envia update no Telegram a cada 30 min (~225 rodadas)
+            if rodada % 225 == 0:
                 try:
-                    msg = "🟢 Huntera Rodada {} | Lugar: {} | Bolsa: {}/{} | Troféus: {} | Peso: {} | Cidade: {}".format(
-                        rodada, ESTADO["lugar_atual"], ESTADO.get("bolsa_slots_ocupados", 0), HUNTERA_BOLSA_SLOTES,
+                    msg = "🟢 Huntera 30min | Rodadas: {} | Lugar: {} | Troféus: {} | Peso: {}g | Bolsa: {}/{}".format(
+                        ESTADO["total_rodadas"], ESTADO["lugar_atual"],
                         ESTADO["trofeus_coletados"], ESTADO["pesos_pegos"],
-                        "🏢" if ESTADO["indo_cidade"] else "")
+                        ESTADO.get("bolsa_slots_ocupados", 0), HUNTERA_BOLSA_SLOTES)
                     enviar_mensagem(msg)
                 except Exception as e:
                     logging.error("[TELEGRAM] falha: {}".format(e))
