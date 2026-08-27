@@ -10,9 +10,6 @@ from datetime import datetime, timezone, timedelta
 BRT = timezone(timedelta(hours=-3))
 
 import requests
-import ccxt
-import pandas as pd
-import numpy as np
 
 BOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BOT_DIR)
@@ -46,10 +43,12 @@ _bufh = _BufferHandler()
 _bufh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logging.getLogger().addHandler(_bufh)
 
+from core.dados import buscar_historico
+
 # ===================== CONFIGURACOES =====================
 ATIVOS = [
-    {"symbol": "COLLECT/USDT:USDT", "timeframe": "3m"},
-    {"symbol": "BTW/USDT:USDT", "timeframe": "15m"},
+    {"symbol": "COLLECTUSDT", "timeframe": "3m"},
+    {"symbol": "BTWUSDT", "timeframe": "15m"},
 ]
 
 BB_LENGTH = 20
@@ -88,14 +87,9 @@ def carregar_resultados():
     return carregar_json(RESULTADOS_FILE, {"wins": 0, "losses": 0, "total_lucro": 0.0, "historico": []})
 
 
-def buscar_candles(exchange, symbol, timeframe, limit=100):
-    ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
-    df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-    return df
-
-
 def calcular_sinais(df, bb_length, bb_mult, vol_multiplier):
+    import pandas as pd
+    import numpy as np
     df = df.copy()
     df["basis"] = df["close"].rolling(bb_length).mean()
     df["stdev"] = df["close"].rolling(bb_length).std(ddof=0)
@@ -145,20 +139,13 @@ def monitor_loop():
         from futuro.telegram import enviar_mensagem
         enviar_mensagem(
             "🟢⚡ SMC BOT BOLLINGER ONLINE!\n"
-            "Monitorando (FUTUROS):\n"
+            "Monitorando (FUTUROS Binance):\n"
             "- COLLECT/USDT (3m)\n"
             "- BTW/USDT (15m)\n"
             f"Estrategia: Bandas de Bollinger ({BB_LENGTH}, {BB_MULT}x) + Volume {VOL_MULTIPLIER}x"
         )
     except Exception:
         pass
-
-    exchanges = {}
-    for ativo in ATIVOS:
-        exchanges[ativo["symbol"]] = ccxt.binance({
-            "enableRateLimit": True,
-            "options": {"defaultType": "future"},
-        })
 
     ultimos_timestamps = {ativo["symbol"]: None for ativo in ATIVOS}
     resultados = carregar_resultados()
@@ -171,21 +158,19 @@ def monitor_loop():
         for ativo in ATIVOS:
             symbol = ativo["symbol"]
             timeframe = ativo["timeframe"]
-            exchange = exchanges[symbol]
 
             try:
-                df = buscar_candles(exchange, symbol, timeframe, limit=100)
+                df = buscar_historico(symbol, timeframe, 100, mercado="futuros")
                 df = calcular_sinais(df, BB_LENGTH, BB_MULT, VOL_MULTIPLIER)
 
                 vela = df.iloc[-2]
-                ts = vela["timestamp"]
+                ts = vela["abertura_tempo"]
 
                 if ultimos_timestamps[symbol] != ts:
                     ultimos_timestamps[symbol] = ts
-                    hora_local = ts.tz_convert(agora.tzinfo)
 
                     if vela["entrada_compra"]:
-                        msg = (f"[{symbol} {timeframe} | {hora_local:%d/%m %H:%M}] "
+                        msg = (f"[{symbol} {timeframe} | {agora:%d/%m %H:%M}] "
                                f"SINAL DE COMPRA - preco: {vela['close']:.6f}")
                         print(msg)
                         logging.info(msg)
@@ -203,7 +188,7 @@ def monitor_loop():
                         salvar_json(RESULTADOS_FILE, resultados)
 
                     elif vela["entrada_venda"]:
-                        msg = (f"[{symbol} {timeframe} | {hora_local:%d/%m %H:%M}] "
+                        msg = (f"[{symbol} {timeframe} | {agora:%d/%m %H:%M}] "
                                f"SINAL DE VENDA - preco: {vela['close']:.6f}")
                         print(msg)
                         logging.info(msg)
