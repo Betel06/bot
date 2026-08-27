@@ -2,6 +2,7 @@ numpy
 pandas
 requests
 flask
+ccxt
 telethon
 tzdata
 git+https://github.com/rongardF/tvdatafeed.git

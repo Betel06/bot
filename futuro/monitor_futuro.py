@@ -7,9 +7,12 @@ import logging
 import collections
 from datetime import datetime, timezone, timedelta
 
-BRT = timezone(timedelta(hours=-3))  # horario de Brasilia fixo (independe do servidor)
+BRT = timezone(timedelta(hours=-3))
 
 import requests
+import ccxt
+import pandas as pd
+import numpy as np
 
 BOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BOT_DIR)
@@ -17,7 +20,6 @@ os.chdir(BOT_DIR)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-# logs do servidor tambem em horario de Brasilia
 for _h in logging.getLogger().handlers:
     _h.formatter.converter = lambda *a: datetime.now(BRT).timetuple()
 
@@ -44,21 +46,26 @@ _bufh = _BufferHandler()
 _bufh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logging.getLogger().addHandler(_bufh)
 
-from futuro.config import PARES, PARES_POR_RODADA, INTERVALO_MONITOR, ENTRADA_USD, ALAVANCAGEM, MERCADO, TIMEOUT_POSICAO_SEGUNDOS, RR_MINIMO
-from core.ai_brain import analisar_com_ia, ia_ativa
-from core.dados import buscar_historico
-from core.risk_manager import avaliar_trade, max_drawdown_protection, risco_diario
-from futuro.telegram import carregar_config, enviar_mensagem, formatar_sinal, formatar_resultado
+# ===================== CONFIGURACOES =====================
+ATIVOS = [
+    {"symbol": "COLLECT/USDT", "timeframe": "3m"},
+    {"symbol": "BTW/USDT", "timeframe": "15m"},
+]
 
-POSICOES_FILE = os.path.join(BOT_DIR, "logs", "futuro_posicoes.json")
-RESULTADOS_FILE = os.path.join(BOT_DIR, "logs", "futuro_resultados.json")
+BB_LENGTH = 20
+BB_MULT = 2.0
+VOL_MULTIPLIER = 1.2
+CHECK_INTERVAL_SECONDS = 15
+# =========================================================
 
 ESTADO = {
-    "modo": "-",
-    "modelo": os.environ.get("AI_MODEL", "gemini-3.5-flash"),
+    "modo": "BOLLINGER",
+    "ativos": len(ATIVOS),
     "ultima_rodada": None,
     "sinais_gerados": 0,
 }
+
+RESULTADOS_FILE = os.path.join(BOT_DIR, "logs", "futuro_resultados.json")
 
 
 def carregar_json(caminho, padrao):
@@ -77,261 +84,149 @@ def salvar_json(caminho, dados):
         json.dump(dados, f, indent=2)
 
 
-def carregar_posicoes():
-    return carregar_json(POSICOES_FILE, [])
-
-
 def carregar_resultados():
     return carregar_json(RESULTADOS_FILE, {"wins": 0, "losses": 0, "total_lucro": 0.0, "historico": []})
 
 
-def checar_posicoes(posicoes_abertas):
-    resultado = []
-    agora = datetime.now(BRT)
-    for pos in list(posicoes_abertas):
-        try:
-            df = buscar_historico(pos["par"], "1m", 10, mercado=MERCADO)
-            if df is None or len(df) == 0:
-                continue
-
-            preco_alta = float(df["high"].iloc[-1])
-            preco_baixa = float(df["low"].iloc[-1])
-
-            fechou = None
-
-            # Timeout: fecharposicao apos 2 horas
-            try:
-                data_pos = datetime.strptime(pos["data"], "%d/%m %H:%M").replace(tzinfo=BRT)
-                idade_seg = (agora - data_pos).total_seconds()
-                if idade_seg > TIMEOUT_POSICAO_SEGUNDOS:
-                    preco_saida = float(df["close"].iloc[-1])
-                    fechou = ("TIMEOUT", preco_saida)
-                    logging.info("[TIMEOUT] {} aberta ha {:.0f}min, fechando no preco atual".format(
-                        pos["par"], idade_seg / 60))
-            except Exception:
-                pass
-
-            if not fechou:
-                if pos["direcao"] == "COMPRA":
-                    if preco_baixa <= pos["stop"]:
-                        fechou = ("STOP LOSS", pos["stop"])
-                    elif preco_alta >= pos["alvo"]:
-                        fechou = ("TAKE PROFIT", pos["alvo"])
-                else:
-                    if preco_alta >= pos["stop"]:
-                        fechou = ("STOP LOSS", pos["stop"])
-                    elif preco_baixa <= pos["alvo"]:
-                        fechou = ("TAKE PROFIT", pos["alvo"])
-
-            if fechou:
-                tipo, saida = fechou
-                if pos["direcao"] == "COMPRA":
-                    lucro = (saida - pos["entrada"]) / pos["entrada"]
-                else:
-                    lucro = (pos["entrada"] - saida) / pos["entrada"]
-                resultado.append({**pos, "tipo": tipo, "preco_saida": saida,
-                                  "lucro_pct": lucro * 100,
-                                  "lucro_usd": lucro * ENTRADA_USD * ALAVANCAGEM,
-                                  "alavancagem": ALAVANCAGEM})
-                posicoes_abertas.remove(pos)
-        except Exception:
-            pass
-
-    return resultado
+def buscar_candles(exchange, symbol, timeframe, limit=100):
+    ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+    df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+    return df
 
 
-_ROTACAO = {"idx": 0}
+def calcular_sinais(df, bb_length, bb_mult, vol_multiplier):
+    df = df.copy()
+    df["basis"] = df["close"].rolling(bb_length).mean()
+    df["stdev"] = df["close"].rolling(bb_length).std(ddof=0)
+    df["upper_band"] = df["basis"] + bb_mult * df["stdev"]
+    df["lower_band"] = df["basis"] - bb_mult * df["stdev"]
+
+    df["vol_media"] = df["volume"].rolling(20).mean()
+    df["volume_ok"] = df["volume"] >= df["vol_media"] * vol_multiplier
+
+    df["tocou_inferior"] = df["close"] <= df["lower_band"]
+    df["tocou_superior"] = df["close"] >= df["upper_band"]
+
+    df["entrada_compra"] = df["tocou_inferior"] & df["volume_ok"]
+    df["entrada_venda"] = df["tocou_superior"] & df["volume_ok"]
+
+    return df
 
 
-def lote_da_rodada():
-    """Retorna o proximo lote de pares (rotacao circular pela lista inteira)."""
-    n = max(1, min(PARES_POR_RODADA, len(PARES)))
-    idx0 = _ROTACAO["idx"] % len(PARES)
-    lote = [PARES[(idx0 + i) % len(PARES)] for i in range(n)]
-    _ROTACAO["idx"] = (idx0 + n) % len(PARES)
-    return lote
-
-
-def checar_sinais():
-    usar_ia = ia_ativa()
-    ESTADO["modo"] = "IA" if usar_ia else "-"
-    sinais = []
-    lote = lote_da_rodada()
-    logging.info("[IA] lote da rodada: {}".format(", ".join(lote)))
-    for par in lote:
-        try:
-            if usar_ia:
-                r = analisar_com_ia(par, mercado=MERCADO)
-            else:
-                r = None
-            if r and r["sinal"]:
-                sinais.append(r)
-        except Exception as e:
-            logging.error("[IA] {} falhou na rodada: {}".format(par, str(e)[:120]))
-        time.sleep(0.3)
-    return sinais
-
-
-def restaurar_do_remoto():
-    """Restaura posicoes/resultados do estado salvo no GitHub."""
+def tocar_som():
     try:
-        from core.persist import carregar_estado
-        secao = (carregar_estado() or {}).get("futuro")
-        if not isinstance(secao, dict):
-            return
-        if not os.path.exists(POSICOES_FILE) and isinstance(secao.get("posicoes"), list):
-            salvar_json(POSICOES_FILE, secao["posicoes"])
-        if not os.path.exists(RESULTADOS_FILE) and isinstance(secao.get("resultados"), dict):
-            salvar_json(RESULTADOS_FILE, secao["resultados"])
-        logging.info("[PERSIST] estado do futuro restaurado do GitHub")
-    except Exception as e:
-        logging.warning("[PERSIST] restauracao falhou: {}".format(e))
+        import winsound
+        winsound.Beep(1000, 700)
+    except Exception:
+        print("\a")
 
 
-def sincronizar_remoto(posicoes, resultados):
-    """Salva estado atual do futuro no GitHub."""
+def notificar(titulo, mensagem):
     try:
-        from core.persist import salvar_secao
-        copia = dict(resultados)
-        copia["historico"] = list(resultados.get("historico", []))[-100:]
-        ok = salvar_secao("futuro", {"posicoes": posicoes, "resultados": copia})
-        if not ok:
-            logging.error("[PERSIST] falha ao salvar estado do futuro no GitHub")
-    except Exception as e:
-        logging.error("[PERSIST] excecao ao sincronizar: {}".format(e))
+        from plyer import notification
+        notification.notify(title=titulo, message=mensagem, timeout=10)
+    except Exception:
+        pass
+
+
+def enviar_telegram(mensagem):
+    try:
+        from futuro.telegram import enviar_mensagem
+        enviar_mensagem(mensagem)
+    except Exception:
+        pass
 
 
 def monitor_loop():
     time.sleep(10)
 
-    token, chat_id = carregar_config()
-    telegram_ok = token is not None and chat_id is not None
+    try:
+        from futuro.telegram import enviar_mensagem
+        enviar_mensagem(
+            "🟢⚡ SMC BOT BOLLINGER ONLINE!\n"
+            "Monitorando:\n"
+            "- COLLECT/USDT (3m)\n"
+            "- BTW/USDT (15m)\n"
+            f"Estrategia: Bandas de Bollinger ({BB_LENGTH}, {BB_MULT}x) + Volume {VOL_MULTIPLIER}x"
+        )
+    except Exception:
+        pass
 
-    restaurar_do_remoto()
-    posicoes_abertas = carregar_posicoes()
+    exchanges = {}
+    for ativo in ATIVOS:
+        exchanges[ativo["symbol"]] = ccxt.binance({"enableRateLimit": True})
+
+    ultimos_timestamps = {ativo["symbol"]: None for ativo in ATIVOS}
     resultados = carregar_resultados()
 
-    try:
-        from core.persist import configurado
-        logging.info("[PERSIST] persistencia GitHub ativa: {}".format(configurado()))
-    except Exception:
-        pass
-
-    if telegram_ok:
-        try:
-            enviar_mensagem("🔵⚡ TRADER FUTURO ONLINE no Render 24/7!\nDay trade com IA (SMC) em 10 pares: BTC, ETH, SOL, XRP, DOGE, AVAX, LINK, SUI, BNB, LTC.\nFiltros: R:R >= 2.0 | Trend filter | Timeout 2h")
-        except Exception as e:
-            logging.error("[TELEGRAM] falha no startup: {}".format(e))
-
     rodada = 0
-
-    intervalo = INTERVALO_MONITOR
-    try:
-        if ia_ativa():
-            intervalo = int(os.environ.get("AI_INTERVALO", str(INTERVALO_MONITOR)))
-            from core.ai_brain import MODELOS as _cadeia
-            logging.info("[IA] cerebro ATIVO (cadeia: {}), rodada a cada {}s".format(
-                " -> ".join(_cadeia), intervalo))
-        else:
-            logging.warning("[IA] DESATIVADA - defina AI_ENABLED=1 e GEMINI_API_KEY")
-    except Exception:
-        pass
-
     while True:
         rodada += 1
         agora = datetime.now(BRT)
 
-        try:
-            novos_resultados = checar_posicoes(posicoes_abertas)
-            for res in novos_resultados:
-                tag = "WIN" if res["tipo"] == "TAKE PROFIT" else "LOSS"
-                logging.info("[{}] {} {} | ${:+.4f} ({:+.2f}%)".format(
-                    tag, res["tipo"], res["par"], res["lucro_usd"], res["lucro_pct"]))
+        for ativo in ATIVOS:
+            symbol = ativo["symbol"]
+            timeframe = ativo["timeframe"]
+            exchange = exchanges[symbol]
 
-                if telegram_ok:
-                    enviar_mensagem(formatar_resultado(res))
+            try:
+                df = buscar_candles(exchange, symbol, timeframe, limit=100)
+                df = calcular_sinais(df, BB_LENGTH, BB_MULT, VOL_MULTIPLIER)
 
-                if res["tipo"] == "TAKE PROFIT":
-                    resultados["wins"] += 1
-                else:
-                    resultados["losses"] += 1
-                resultados["total_lucro"] += res["lucro_usd"]
-                resultados["historico"].append({
-                    "par": res["par"],
-                    "direcao": res.get("direcao", ""),
-                    "tipo": res["tipo"],
-                    "lucro": res["lucro_usd"],
-                    "data": agora.strftime("%d/%m %H:%M"),
-                })
+                vela = df.iloc[-2]
+                ts = vela["timestamp"]
 
-            sinais = checar_sinais()
-            ESTADO["ultima_rodada"] = agora.strftime("%d/%m %H:%M:%S")
-            ESTADO["sinais_gerados"] += len(sinais)
+                if ultimos_timestamps[symbol] != ts:
+                    ultimos_timestamps[symbol] = ts
+                    hora_local = ts.tz_convert(agora.tzinfo)
 
-            abriu_posicao = False
-            for s in sinais:
-                ja_aberto = any(p["par"] == s["par"] for p in posicoes_abertas)
+                    if vela["entrada_compra"]:
+                        msg = (f"[{symbol} {timeframe} | {hora_local:%d/%m %H:%M}] "
+                               f"SINAL DE COMPRA - preco: {vela['close']:.6f}")
+                        print(msg)
+                        logging.info(msg)
+                        tocar_som()
+                        notificar(f"Sinal de COMPRA - {symbol} ({timeframe})", msg)
+                        enviar_telegram(msg)
+                        ESTADO["sinais_gerados"] += 1
 
-                if not ja_aberto:
-                    capital_atual = ENTRADA_USD * 5 + resultados.get("total_lucro", 0)
-                    capital_atual = max(capital_atual, 1.0)
+                        resultados["historico"].append({
+                            "par": symbol,
+                            "sinal": "COMPRA",
+                            "preco": float(vela["close"]),
+                            "data": agora.strftime("%d/%m %H:%M"),
+                        })
+                        salvar_json(RESULTADOS_FILE, resultados)
 
-                    aval = avaliar_trade(
-                        s["preco"], s["stop"], s["alvo"],
-                        capital_atual, 0.02, ALAVANCAGEM
-                    )
+                    elif vela["entrada_venda"]:
+                        msg = (f"[{symbol} {timeframe} | {hora_local:%d/%m %H:%M}] "
+                               f"SINAL DE VENDA - preco: {vela['close']:.6f}")
+                        print(msg)
+                        logging.info(msg)
+                        tocar_som()
+                        notificar(f"Sinal de VENDA - {symbol} ({timeframe})", msg)
+                        enviar_telegram(msg)
+                        ESTADO["sinais_gerados"] += 1
 
-                    dd = max_drawdown_protection(10.0, 10.0 + resultados.get("total_lucro", 0))
+                        resultados["historico"].append({
+                            "par": symbol,
+                            "sinal": "VENDA",
+                            "preco": float(vela["close"]),
+                            "data": agora.strftime("%d/%m %H:%M"),
+                        })
+                        salvar_json(RESULTADOS_FILE, resultados)
 
-                    if dd["deve_parar"]:
-                        logging.warning("[RISCO] Drawdown maximo atingido ({}%), posicao bloqueada".format(dd["dd_pct"]))
-                        continue
+                    else:
+                        logging.info(f"[{symbol} {timeframe}] Sem sinal - preco: {vela['close']:.6f}")
 
-                    if aval.get("risco_pesado"):
-                        logging.warning("[RISCO] Trade arrisca mais de 10% do capital, ignorando")
-                        continue
+            except Exception as e:
+                logging.error(f"[{symbol} {timeframe}] Erro: {e}")
 
-                    if not aval.get("rr_aceitavel"):
-                        logging.info("[RISCO] R:R {} abaixo do minimo, ignorando".format(aval.get("rr")))
-                        continue
+        ESTADO["ultima_rodada"] = agora.strftime("%d/%m %H:%M:%S")
+        logging.info(f"[Rodada {rodada}] {ESTADO['sinais_gerados']} sinais | {len(ATIVOS)} ativos")
 
-                    abriu_posicao = True
-                    posicoes_abertas.append({
-                        "par": s["par"],
-                        "direcao": s["sinal"],
-                        "entrada": s["preco"],
-                        "stop": s["stop"],
-                        "alvo": s["alvo"],
-                        "data": agora.strftime("%d/%m %H:%M"),
-                        "preco_atual": s["preco"],
-                        "risco_valor": aval.get("risco_valor", 0),
-                    })
-
-                    logging.info("[SINAL] {} {} | ${:.6f} | R:R {} | Risco ${:.2f}".format(
-                        s["sinal"], s["par"], s["preco"],
-                        aval.get("rr", 0), aval.get("risco_valor", 0)))
-
-                    if telegram_ok:
-                        enviar_mensagem(formatar_sinal(s))
-
-            salvar_posicoes_e_resultados(posicoes_abertas, resultados)
-
-            if novos_resultados or abriu_posicao:
-                sincronizar_remoto(posicoes_abertas, resultados)
-
-            logging.info("[Rodada {}] {}W {}L | ${:+.2f} | {} posicoes abertas".format(
-                rodada, resultados["wins"], resultados["losses"], resultados["total_lucro"],
-                len(posicoes_abertas)))
-
-        except Exception as e:
-            logging.error("[ERRO] {}".format(e))
-
-        time.sleep(intervalo)
-
-
-def salvar_posicoes_e_resultados(posicoes, resultados):
-    salvar_json(POSICOES_FILE, posicoes)
-    salvar_json(RESULTADOS_FILE, resultados)
+        time.sleep(CHECK_INTERVAL_SECONDS)
 
 
 def keep_alive_loop():
@@ -353,7 +248,7 @@ def criar_app():
     @app.route("/")
     def hello_world():
         r = carregar_resultados()
-        return "Trader Futuro Online! IA 24/7. Wins: {} | Losses: {}".format(r["wins"], r["losses"])
+        return "SMC Bot Bollinger Online! Sinais: {}".format(ESTADO["sinais_gerados"])
 
     @app.route("/health")
     def health():
@@ -362,24 +257,19 @@ def criar_app():
     @app.route("/status")
     def status():
         r = carregar_resultados()
-        p = carregar_posicoes()
         return {
-            "bot": "futuro",
+            "bot": "futuro_bollinger",
             "status": "online",
-            "wins": r["wins"],
-            "losses": r["losses"],
-            "entrada_usd": ENTRADA_USD,
-            "alavancagem": ALAVANCAGEM,
-            "pl_usd": round(r["total_lucro"], 4),
-            "posicoes_abertas": len(p),
-            "abertas": [{"par": x["par"], "direcao": x.get("direcao", ""), "data": x.get("data", "")} for x in p],
-            "historico": r.get("historico", [])[-12:],
-            "ia": ESTADO,
-            "filtros": {
-                "rr_minimo": RR_MINIMO,
-                "timeout_h": TIMEOUT_POSICAO_SEGUNDOS // 3600,
-                "pares": len(PARES),
+            "estrategia": "Bollinger Bands",
+            "parametros": {
+                "bb_length": BB_LENGTH,
+                "bb_mult": BB_MULT,
+                "vol_multiplier": VOL_MULTIPLIER,
             },
+            "ativos": [{"symbol": a["symbol"], "timeframe": a["timeframe"]} for a in ATIVOS],
+            "sinais_gerados": ESTADO["sinais_gerados"],
+            "ultima_rodada": ESTADO["ultima_rodada"],
+            "historico": r.get("historico", [])[-12:],
         }
 
     @app.route("/debug")
@@ -393,24 +283,6 @@ def criar_app():
             "estado": ESTADO,
             "logs": list(LOG_BUFFER)[-80:],
         }
-
-    @app.route("/audit")
-    def audit():
-        arquivo = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "..", "logs", "ai_decisions_futuro.jsonl")
-        itens = []
-        try:
-            with open(arquivo, encoding="utf-8") as f:
-                for ln in f.readlines()[-20:]:
-                    ln = ln.strip()
-                    if ln:
-                        try:
-                            itens.append(json.loads(ln))
-                        except Exception:
-                            pass
-        except FileNotFoundError:
-            pass
-        return {"total": len(itens), "decisoes": itens}
 
     MONITOR_THREAD = threading.Thread(target=monitor_loop, daemon=True)
     MONITOR_THREAD.start()
