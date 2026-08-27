@@ -48,8 +48,8 @@ logging.getLogger().addHandler(_bufh)
 
 # ===================== CONFIGURACOES =====================
 ATIVOS = [
-    {"symbol": "COLLECT/USDT", "timeframe": "3m"},
-    {"symbol": "BTW/USDT", "timeframe": "15m"},
+    {"symbol": "COLLECT/USDT:USDT", "timeframe": "3m"},
+    {"symbol": "BTW/USDT:USDT", "timeframe": "15m"},
 ]
 
 BB_LENGTH = 20
@@ -145,7 +145,7 @@ def monitor_loop():
         from futuro.telegram import enviar_mensagem
         enviar_mensagem(
             "🟢⚡ SMC BOT BOLLINGER ONLINE!\n"
-            "Monitorando:\n"
+            "Monitorando (FUTUROS):\n"
             "- COLLECT/USDT (3m)\n"
             "- BTW/USDT (15m)\n"
             f"Estrategia: Bandas de Bollinger ({BB_LENGTH}, {BB_MULT}x) + Volume {VOL_MULTIPLIER}x"
@@ -155,7 +155,10 @@ def monitor_loop():
 
     exchanges = {}
     for ativo in ATIVOS:
-        exchanges[ativo["symbol"]] = ccxt.binance({"enableRateLimit": True})
+        exchanges[ativo["symbol"]] = ccxt.binance({
+            "enableRateLimit": True,
+            "options": {"defaultType": "future"},
+        })
 
     ultimos_timestamps = {ativo["symbol"]: None for ativo in ATIVOS}
     resultados = carregar_resultados()
