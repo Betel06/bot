@@ -83,6 +83,15 @@ ESTADO = {
 RESULTADOS_FILE = os.path.join(BOT_DIR, "logs", "futuro_resultados.json")
 BANCA_FILE = os.path.join(BOT_DIR, "logs", "futuro_banca.json")
 
+SECAO = "futuro_bollinger"
+
+try:
+    from core import persist as persist
+    PERSIST_DISPONIVEL = persist.configurado()
+except Exception:
+    persist = None
+    PERSIST_DISPONIVEL = False
+
 
 def carregar_json(caminho, padrao):
     try:
@@ -100,12 +109,8 @@ def salvar_json(caminho, dados):
         json.dump(dados, f, indent=2, ensure_ascii=False)
 
 
-def carregar_resultados():
-    return carregar_json(RESULTADOS_FILE, {"wins": 0, "losses": 0, "total_lucro": 0.0, "historico": []})
-
-
-def carregar_banca():
-    padrao = {
+def _banca_padrao():
+    return {
         "banca": BANCO_INICIAL,
         "banca_inicial": BANCO_INICIAL,
         "alavancagem": ALAVANCAGEM,
@@ -114,8 +119,53 @@ def carregar_banca():
         "total_lucro": 0.0,
         "posicoes_abertas": {},
         "historico": [],
+        "ultimos_timestamps": {},
     }
-    return carregar_json(BANCA_FILE, padrao)
+
+
+def _merge_banca(origem, padrao):
+    dados = dict(padrao)
+    if isinstance(origem, dict):
+        for k in ["banca", "banca_inicial", "alavancagem", "wins", "losses", "total_lucro"]:
+            if k in origem:
+                dados[k] = origem[k]
+        for k in ["posicoes_abertas", "historico", "ultimos_timestamps"]:
+            if isinstance(origem.get(k), (dict, list)):
+                dados[k] = origem[k]
+    return dados
+
+
+def carregar_banca():
+    """GitHub eh a fonte da verdade; disco local eh fallback."""
+    origem = None
+    if persist is not None:
+        try:
+            estado = persist.carregar_estado()
+            if isinstance(estado, dict) and isinstance(estado.get(SECAO), dict):
+                origem = estado[SECAO]
+        except Exception:
+            pass
+
+    if origem is None:
+        origem = carregar_json(BANCA_FILE, {})
+
+    return _merge_banca(origem, _banca_padrao())
+
+
+def salvar_banca(banca_data):
+    try:
+        salvar_json(BANCA_FILE, banca_data)
+    except Exception:
+        pass
+    if persist is not None:
+        try:
+            persist.salvar_secao(SECAO, dict(banca_data))
+        except Exception:
+            pass
+
+
+def carregar_resultados():
+    return carregar_json(RESULTADOS_FILE, {"wins": 0, "losses": 0, "total_lucro": 0.0, "historico": []})
 
 
 def abrir_posicao(banca_data, display, symbol, sinal, entrada, stop, alvo):
@@ -142,17 +192,17 @@ def abrir_posicao(banca_data, display, symbol, sinal, entrada, stop, alvo):
         "data_entrada": datetime.now(BRT).strftime("%d/%m %H:%M"),
     }
     banca_data["posicoes_abertas"][pos_id] = posicao
-    salvar_json(BANCA_FILE, banca_data)
+    salvar_banca(banca_data)
     return posicao, pos_id
 
 
 def fechar_posicao(banca_data, pos_id, motivo, preco_saida):
     pos = banca_data["posicoes_abertas"].pop(pos_id, None)
     if not pos:
-        return
+        return None
 
     entrada = pos["entrada"]
-    tamanho = pos["tamanho_usd"]
+    tamanho = pos.get("tamanho_usd", 0)
     sinal = pos["sinal"]
 
     if sinal == "COMPRA":
@@ -180,7 +230,7 @@ def fechar_posicao(banca_data, pos_id, motivo, preco_saida):
         "data": datetime.now(BRT).strftime("%d/%m %H:%M"),
     }
     banca_data["historico"].append(resultado)
-    salvar_json(BANCA_FILE, banca_data)
+    salvar_banca(banca_data)
 
     emoji = "WIN" if pnl_usd >= 0 else "LOSS"
     msg = (
@@ -265,31 +315,94 @@ def buscar_candles_tv(symbol, timeframe, limit=100):
     return df
 
 
-def formatar_painel(banca_data):
-    banca = banca_data["banca"]
-    inicial = banca_data["banca_inicial"]
-    lucro = banca_data["total_lucro"]
-    win = banca_data["wins"]
-    loss = banca_data["losses"]
-    total = win + loss
-    wr = (win / total * 100) if total > 0 else 0
-    abertas = len(banca_data["posicoes_abertas"])
-    lucro_pct = ((banca - inicial) / inicial * 100) if inicial > 0 else 0
+def checar_fechamentos(banca_data, symbol, df, novo_index):
+    """Ve se as posicoes abertas deste symbol foram tocadas nas velas novas."""
+    msgs = []
+    for k in range(novo_index):
+        vela = df.iloc[k]
+        candle_low = float(vela["low"])
+        candle_high = float(vela["high"])
 
-    painel = (
-        f"{'='*30}\n"
-        f"📊 PAINEL BOLLINGER\n"
-        f"{'='*30}\n"
-        f"💰 Banca: {banca:.2f} USDT\n"
-        f"📈 Lucro: {'+' if lucro >=0 else ''}{lucro:.2f} USDT ({'+' if lucro_pct >=0 else ''}{lucro_pct:.1f}%)\n"
-        f"🎯 Win Rate: {wr:.1f}% ({win}W / {loss}L)\n"
-        f"📦 Posicoes abertas: {abertas}\n"
-        f"{'='*30}\n"
+        pos_para_fechar = []
+        for pos_id, pos in list(banca_data["posicoes_abertas"].items()):
+            if pos["symbol"] != symbol:
+                continue
+            if pos["sinal"] == "COMPRA":
+                if candle_low <= pos["stop"]:
+                    pos_para_fechar.append((pos_id, "Stop Loss", pos["stop"]))
+                elif candle_high >= pos["alvo"]:
+                    pos_para_fechar.append((pos_id, "Take Win", pos["alvo"]))
+            else:
+                if candle_high >= pos["stop"]:
+                    pos_para_fechar.append((pos_id, "Stop Loss", pos["stop"]))
+                elif candle_low <= pos["alvo"]:
+                    pos_para_fechar.append((pos_id, "Take Win", pos["alvo"]))
+
+        for pos_id, motivo, preco in pos_para_fechar:
+            msg = fechar_posicao(banca_data, pos_id, motivo, preco)
+            if msg:
+                msgs.append(msg)
+    return msgs
+
+
+def processar_vela(banca_data, ativo, symbol, display, timeout_tf, vela, agora):
+    """Abre posicao se a vela tiver sinal. Retorna lista de mensagens."""
+    msgs = []
+    candle_low = float(vela["low"])
+    candle_high = float(vela["high"])
+    candle_close = float(vela["close"])
+
+    tem_posicao_aberta = any(
+        p["symbol"] == symbol for p in banca_data["posicoes_abertas"].values()
     )
-    return painel
+
+    if bool(vela["entrada_compra"]) and not tem_posicao_aberta:
+        pos, pos_id = abrir_posicao(banca_data, display, symbol, "COMPRA", candle_close,
+                                    float(vela["stop_compra"]), float(vela["alvo_compra"]))
+        if pos:
+            msg = (
+                f"🔔 NOVA COMPRA - {display}\n"
+                f"{'='*30}\n"
+                f"Entrada: {candle_close:.6f}\n"
+                f"Stop Loss: {pos['stop']:.6f}\n"
+                f"Take Win: {pos['alvo']:.6f}\n"
+                f"R:R 1:{ALVO_MULTIPLo:.0f}\n"
+                f"{'='*30}\n"
+                f"💰 Tamanho: {pos['tamanho_usd']:.2f} USDT\n"
+                f"📊 Risco: {pos['risco_usd']:.4f} USDT\n"
+                f"🎯 Lucro pot: {pos['lucro_pot']:.4f} USDT\n"
+                f"{'='*30}"
+            )
+            msgs.append(msg)
+            ESTADO["sinais_gerados"] += 1
+
+    elif bool(vela["entrada_venda"]) and not tem_posicao_aberta:
+        pos, pos_id = abrir_posicao(banca_data, display, symbol, "VENDA", candle_close,
+                                    float(vela["stop_venda"]), float(vela["alvo_venda"]))
+        if pos:
+            msg = (
+                f"🔔 NOVA VENDA - {display}\n"
+                f"{'='*30}\n"
+                f"Entrada: {candle_close:.6f}\n"
+                f"Stop Loss: {pos['stop']:.6f}\n"
+                f"Take Win: {pos['alvo']:.6f}\n"
+                f"R:R 1:{ALVO_MULTIPLo:.0f}\n"
+                f"{'='*30}\n"
+                f"💰 Tamanho: {pos['tamanho_usd']:.2f} USDT\n"
+                f"📊 Risco: {pos['risco_usd']:.4f} USDT\n"
+                f"🎯 Lucro pot: {pos['lucro_pot']:.4f} USDT\n"
+                f"{'='*30}"
+            )
+            msgs.append(msg)
+            ESTADO["sinais_gerados"] += 1
+
+    if not msgs:
+        logging.info(f"[{display} {timeout_tf}] Sem sinal - preco: {candle_close:.6f}")
+    return msgs
 
 
 def monitor_loop():
+    import pandas as pd
     time.sleep(10)
 
     banca_data = carregar_banca()
@@ -301,6 +414,7 @@ def monitor_loop():
             f"💰 Banca: {banca_data['banca']:.2f} USDT\n"
             f"🔧 Alavancagem: {ALAVANCAGEM}x\n"
             f"📊 Risco/trade: {RISCO_POR_TRADE*100:.0f}%\n"
+            f"🔒 Persistencia: {'GitHub ON' if PERSIST_DISPONIVEL else 'local'}\n"
             f"{'='*30}\n"
             f"Monitorando:\n"
             f"- COLLECT/USDT (3m)\n"
@@ -310,7 +424,6 @@ def monitor_loop():
     except Exception:
         pass
 
-    ultimos_timestamps = {ativo["symbol"]: None for ativo in ATIVOS}
     resultados = carregar_resultados()
 
     rodada = 0
@@ -327,117 +440,50 @@ def monitor_loop():
                 df = buscar_candles_tv(symbol, timeframe, limit=100)
                 df = calcular_sinais(df, BB_LENGTH, BB_MULT, VOL_MULTIPLIER)
 
-                vela = df.iloc[-2]
-                ts = vela["abertura_tempo"]
-                candle_low = float(vela["low"])
-                candle_high = float(vela["high"])
-                candle_close = float(vela["close"])
+                ult_timestamps = banca_data.setdefault("ultimos_timestamps", {})
+                ult_bruto = ult_timestamps.get(symbol)
 
-                # ---- Checar posicoes abertas ----
-                pos_para_fechar = []
-                for pos_id, pos in list(banca_data["posicoes_abertas"].items()):
-                    if pos["symbol"] != symbol:
-                        continue
-                    if pos["sinal"] == "COMPRA":
-                        if candle_low <= pos["stop"]:
-                            pos_para_fechar.append((pos_id, "Stop Loss", pos["stop"]))
-                        elif candle_high >= pos["alvo"]:
-                            pos_para_fechar.append((pos_id, "Take Win", pos["alvo"]))
+                # a partir de qual indice processar (velas fechadas novas)
+                inicio = 0
+                if ult_bruto is not None:
+                    ref = pd.to_datetime(ult_bruto)
+                    for i in range(len(df) - 1):
+                        if pd.to_datetime(df.iloc[i]["abertura_tempo"]) > ref:
+                            inicio = i
+                            break
                     else:
-                        if candle_high >= pos["stop"]:
-                            pos_para_fechar.append((pos_id, "Stop Loss", pos["stop"]))
-                        elif candle_low <= pos["alvo"]:
-                            pos_para_fechar.append((pos_id, "Take Win", pos["alvo"]))
+                        inicio = len(df) - 1
+                else:
+                    # primeiro boot: processa so a ultima vela fechada (iloc[-2])
+                    inicio = len(df) - 2
 
-                for pos_id, motivo, preco in pos_para_fechar:
-                    msg = fechar_posicao(banca_data, pos_id, motivo, preco)
-                    if msg:
-                        print(msg)
-                        logging.info(msg)
-                        enviar_telegram(msg)
+                # checar fechamentos de posicoes nas velas novas
+                msgs = checar_fechamentos(banca_data, symbol, df, inicio)
 
-                # ---- Novo sinal ----
-                if ultimos_timestamps[symbol] != ts:
-                    ultimos_timestamps[symbol] = ts
+                # processar velas novas (sinais)
+                for i in range(inicio, len(df) - 1):
+                    vela = df.iloc[i]
+                    msgs += processar_vela(banca_data, ativo, symbol, display, timeframe, vela, agora)
+                    ult_timestamps[symbol] = str(df.iloc[i]["abertura_tempo"])
 
-                    tem_posicao_aberta = any(
-                        p["symbol"] == symbol for p in banca_data["posicoes_abertas"].values()
-                    )
+                if inicio < len(df) - 1:
+                    ult_timestamps[symbol] = str(df.iloc[len(df) - 2]["abertura_tempo"])
+                    salvar_banca(banca_data)
 
-                    if vela["entrada_compra"] and not tem_posicao_aberta:
-                        entrada = candle_close
-                        stop = vela["stop_compra"]
-                        alvo = vela["alvo_compra"]
-                        pos, pos_id = abrir_posicao(banca_data, display, symbol, "COMPRA", entrada, stop, alvo)
-                        if pos:
-                            msg = (
-                                f"🔔 NOVA COMPRA - {display}\n"
-                                f"{'='*30}\n"
-                                f"Entrada: {entrada:.6f}\n"
-                                f"Stop Loss: {stop:.6f}\n"
-                                f"Take Win: {alvo:.6f}\n"
-                                f"R:R 1:{ALVO_MULTIPLo:.0f}\n"
-                                f"{'='*30}\n"
-                                f"💰 Tamanho: {pos['tamanho_usd']:.2f} USDT\n"
-                                f"📊 Risco: {pos['risco_usd']:.4f} USDT\n"
-                                f"🎯 Lucro pot: {pos['lucro_pot']:.4f} USDT\n"
-                                f"{'='*30}"
-                            )
-                            print(msg)
-                            logging.info(msg)
-                            tocar_som()
-                            notificar(f"COMPRA {display}", msg)
-                            enviar_telegram(msg)
-                            ESTADO["sinais_gerados"] += 1
+                for m in msgs:
+                    print(m)
+                    logging.info(m)
+                    tocar_som()
+                    enviar_telegram(m)
 
-                            resultados["historico"].append({
-                                "par": display,
-                                "sinal": "COMPRA",
-                                "preco": float(entrada),
-                                "stop": float(stop),
-                                "alvo": float(alvo),
-                                "data": agora.strftime("%d/%m %H:%M"),
-                            })
-                            salvar_json(RESULTADOS_FILE, resultados)
-
-                    elif vela["entrada_venda"] and not tem_posicao_aberta:
-                        entrada = candle_close
-                        stop = vela["stop_venda"]
-                        alvo = vela["alvo_venda"]
-                        pos, pos_id = abrir_posicao(banca_data, display, symbol, "VENDA", entrada, stop, alvo)
-                        if pos:
-                            msg = (
-                                f"🔔 NOVA VENDA - {display}\n"
-                                f"{'='*30}\n"
-                                f"Entrada: {entrada:.6f}\n"
-                                f"Stop Loss: {stop:.6f}\n"
-                                f"Take Win: {alvo:.6f}\n"
-                                f"R:R 1:{ALVO_MULTIPLo:.0f}\n"
-                                f"{'='*30}\n"
-                                f"💰 Tamanho: {pos['tamanho_usd']:.2f} USDT\n"
-                                f"📊 Risco: {pos['risco_usd']:.4f} USDT\n"
-                                f"🎯 Lucro pot: {pos['lucro_pot']:.4f} USDT\n"
-                                f"{'='*30}"
-                            )
-                            print(msg)
-                            logging.info(msg)
-                            tocar_som()
-                            notificar(f"VENDA {display}", msg)
-                            enviar_telegram(msg)
-                            ESTADO["sinais_gerados"] += 1
-
-                            resultados["historico"].append({
-                                "par": display,
-                                "sinal": "VENDA",
-                                "preco": float(entrada),
-                                "stop": float(stop),
-                                "alvo": float(alvo),
-                                "data": agora.strftime("%d/%m %H:%M"),
-                            })
-                            salvar_json(RESULTADOS_FILE, resultados)
-
-                    else:
-                        logging.info(f"[{display} {timeframe}] Sem sinal - preco: {candle_close:.6f}")
+                resultados_atuais = banca_data.get("historico", [])[-5:]
+                if resultados_atuais:
+                    salvar_json(RESULTADOS_FILE, {
+                        "wins": banca_data["wins"],
+                        "losses": banca_data["losses"],
+                        "total_lucro": banca_data["total_lucro"],
+                        "historico": resultados_atuais,
+                    })
 
             except Exception as e:
                 logging.error(f"[{display} {timeframe}] Erro: {e}")
@@ -476,7 +522,6 @@ def criar_app():
     @app.route("/status")
     def status():
         b = carregar_banca()
-        r = carregar_resultados()
         win = b["wins"]
         loss = b["losses"]
         total = win + loss
@@ -487,6 +532,7 @@ def criar_app():
             "bot": "futuro_bollinger",
             "status": "online",
             "estrategia": "Bollinger Bands",
+            "persistencia": "github" if PERSIST_DISPONIVEL else "local",
             "banca": {
                 "atual": round(b["banca"], 2),
                 "inicial": b["banca_inicial"],
@@ -515,6 +561,7 @@ def criar_app():
             "estado": ESTADO,
             "banca": b["banca"],
             "posicoes_abertas": b["posicoes_abertas"],
+            "ultimos_timestamps": b.get("ultimos_timestamps", {}),
             "logs": list(LOG_BUFFER)[-80:],
         }
 
