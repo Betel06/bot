@@ -115,6 +115,20 @@ def calcular_sinais(df, bb_length, bb_mult, vol_multiplier):
     df["entrada_compra"] = df["tocou_inferior"] & df["volume_ok"]
     df["entrada_venda"] = df["tocou_superior"] & df["volume_ok"]
 
+    # ATR para stops
+    high_low = df["high"] - df["low"]
+    high_close = (df["high"] - df["close"].shift()).abs()
+    low_close = (df["low"] - df["close"].shift()).abs()
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    df["atr"] = tr.rolling(14).mean()
+
+    # Stop e alvo
+    RR_RATIO = 2.0
+    df["stop_compra"] = df["lower_band"] - df["atr"]
+    df["alvo_compra"] = df["close"] + (df["close"] - df["stop_compra"]) * RR_RATIO
+    df["stop_venda"] = df["upper_band"] + df["atr"]
+    df["alvo_venda"] = df["close"] - (df["stop_venda"] - df["close"]) * RR_RATIO
+
     return df
 
 
@@ -206,8 +220,12 @@ def monitor_loop():
                     ultimos_timestamps[symbol] = ts
 
                     if vela["entrada_compra"]:
+                        stop = vela["stop_compra"]
+                        alvo = vela["alvo_compra"]
                         msg = (f"[{display} {timeframe} | {agora:%d/%m %H:%M}] "
-                               f"SINAL DE COMPRA - preco: {vela['close']:.6f}")
+                               f"COMPRA - preco: {vela['close']:.6f}\n"
+                               f"Stop: {stop:.6f} | Alvo: {alvo:.6f}\n"
+                               f"R:R 1:2")
                         print(msg)
                         logging.info(msg)
                         tocar_som()
@@ -219,13 +237,19 @@ def monitor_loop():
                             "par": display,
                             "sinal": "COMPRA",
                             "preco": float(vela["close"]),
+                            "stop": float(stop),
+                            "alvo": float(alvo),
                             "data": agora.strftime("%d/%m %H:%M"),
                         })
                         salvar_json(RESULTADOS_FILE, resultados)
 
                     elif vela["entrada_venda"]:
+                        stop = vela["stop_venda"]
+                        alvo = vela["alvo_venda"]
                         msg = (f"[{display} {timeframe} | {agora:%d/%m %H:%M}] "
-                               f"SINAL DE VENDA - preco: {vela['close']:.6f}")
+                               f"VENDA - preco: {vela['close']:.6f}\n"
+                               f"Stop: {stop:.6f} | Alvo: {alvo:.6f}\n"
+                               f"R:R 1:2")
                         print(msg)
                         logging.info(msg)
                         tocar_som()
@@ -237,6 +261,8 @@ def monitor_loop():
                             "par": display,
                             "sinal": "VENDA",
                             "preco": float(vela["close"]),
+                            "stop": float(stop),
+                            "alvo": float(alvo),
                             "data": agora.strftime("%d/%m %H:%M"),
                         })
                         salvar_json(RESULTADOS_FILE, resultados)
