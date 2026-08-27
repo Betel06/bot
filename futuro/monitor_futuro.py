@@ -43,13 +43,23 @@ _bufh = _BufferHandler()
 _bufh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logging.getLogger().addHandler(_bufh)
 
-from core.dados import buscar_historico
+from tvDatafeed import TvDatafeed, Interval
 
 # ===================== CONFIGURACOES =====================
 ATIVOS = [
-    {"symbol": "COLLECTUSDT", "timeframe": "3m"},
-    {"symbol": "BTWUSDT", "timeframe": "15m"},
+    {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "3m", "display": "COLLECT/USDT"},
+    {"symbol": "BINANCE:BTWUSDT.P", "timeframe": "15m", "display": "BTW/USDT"},
 ]
+
+TV_INTERVALS = {
+    "1m": Interval.in_1_minute,
+    "3m": Interval.in_3_minute,
+    "5m": Interval.in_5_minute,
+    "15m": Interval.in_15_minute,
+    "30m": Interval.in_30_minute,
+    "1h": Interval.in_1_hour,
+    "4h": Interval.in_4_hour,
+}
 
 BB_LENGTH = 20
 BB_MULT = 2.0
@@ -132,6 +142,30 @@ def enviar_telegram(mensagem):
         pass
 
 
+tv_client = None
+
+
+def get_tv_client():
+    global tv_client
+    if tv_client is None:
+        tv_client = TvDatafeed()
+    return tv_client
+
+
+def buscar_candles_tv(symbol, timeframe, limit=100):
+    """Busca candles do TradingView."""
+    tv = get_tv_client()
+    interval = TV_INTERVALS.get(timeframe)
+    if not interval:
+        raise ValueError(f"Timeframe nao suportado: {timeframe}")
+    df = tv.get_hist(symbol, exchange="binance", interval=interval, n_bars=limit)
+    if df is None or df.empty:
+        raise ValueError(f"Sem dados para {symbol}")
+    df = df.reset_index()
+    df = df.rename(columns={"datetime": "abertura_tempo"})
+    return df
+
+
 def monitor_loop():
     time.sleep(10)
 
@@ -139,7 +173,8 @@ def monitor_loop():
         from futuro.telegram import enviar_mensagem
         enviar_mensagem(
             "🟢⚡ SMC BOT BOLLINGER ONLINE!\n"
-            "Monitorando (FUTUROS Binance):\n"
+            "Fonte: TradingView\n"
+            "Monitorando:\n"
             "- COLLECT/USDT (3m)\n"
             "- BTW/USDT (15m)\n"
             f"Estrategia: Bandas de Bollinger ({BB_LENGTH}, {BB_MULT}x) + Volume {VOL_MULTIPLIER}x"
@@ -157,10 +192,11 @@ def monitor_loop():
 
         for ativo in ATIVOS:
             symbol = ativo["symbol"]
+            display = ativo["display"]
             timeframe = ativo["timeframe"]
 
             try:
-                df = buscar_historico(symbol, timeframe, 100, mercado="futuros")
+                df = buscar_candles_tv(symbol, timeframe, limit=100)
                 df = calcular_sinais(df, BB_LENGTH, BB_MULT, VOL_MULTIPLIER)
 
                 vela = df.iloc[-2]
@@ -170,17 +206,17 @@ def monitor_loop():
                     ultimos_timestamps[symbol] = ts
 
                     if vela["entrada_compra"]:
-                        msg = (f"[{symbol} {timeframe} | {agora:%d/%m %H:%M}] "
+                        msg = (f"[{display} {timeframe} | {agora:%d/%m %H:%M}] "
                                f"SINAL DE COMPRA - preco: {vela['close']:.6f}")
                         print(msg)
                         logging.info(msg)
                         tocar_som()
-                        notificar(f"Sinal de COMPRA - {symbol} ({timeframe})", msg)
+                        notificar(f"Sinal de COMPRA - {display} ({timeframe})", msg)
                         enviar_telegram(msg)
                         ESTADO["sinais_gerados"] += 1
 
                         resultados["historico"].append({
-                            "par": symbol,
+                            "par": display,
                             "sinal": "COMPRA",
                             "preco": float(vela["close"]),
                             "data": agora.strftime("%d/%m %H:%M"),
@@ -188,17 +224,17 @@ def monitor_loop():
                         salvar_json(RESULTADOS_FILE, resultados)
 
                     elif vela["entrada_venda"]:
-                        msg = (f"[{symbol} {timeframe} | {agora:%d/%m %H:%M}] "
+                        msg = (f"[{display} {timeframe} | {agora:%d/%m %H:%M}] "
                                f"SINAL DE VENDA - preco: {vela['close']:.6f}")
                         print(msg)
                         logging.info(msg)
                         tocar_som()
-                        notificar(f"Sinal de VENDA - {symbol} ({timeframe})", msg)
+                        notificar(f"Sinal de VENDA - {display} ({timeframe})", msg)
                         enviar_telegram(msg)
                         ESTADO["sinais_gerados"] += 1
 
                         resultados["historico"].append({
-                            "par": symbol,
+                            "par": display,
                             "sinal": "VENDA",
                             "preco": float(vela["close"]),
                             "data": agora.strftime("%d/%m %H:%M"),
@@ -206,10 +242,10 @@ def monitor_loop():
                         salvar_json(RESULTADOS_FILE, resultados)
 
                     else:
-                        logging.info(f"[{symbol} {timeframe}] Sem sinal - preco: {vela['close']:.6f}")
+                        logging.info(f"[{display} {timeframe}] Sem sinal - preco: {vela['close']:.6f}")
 
             except Exception as e:
-                logging.error(f"[{symbol} {timeframe}] Erro: {e}")
+                logging.error(f"[{display} {timeframe}] Erro: {e}")
 
         ESTADO["ultima_rodada"] = agora.strftime("%d/%m %H:%M:%S")
         logging.info(f"[Rodada {rodada}] {ESTADO['sinais_gerados']} sinais | {len(ATIVOS)} ativos")
