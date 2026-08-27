@@ -48,7 +48,7 @@ from tvDatafeed import TvDatafeed, Interval
 # ===================== CONFIGURACOES (igual ao Pine) =====================
 ATIVOS = [
     {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "3m", "display": "COLLECT/USDT"},
-    {"symbol": "BINANCE:BTWUSDT.P", "timeframe": "15m", "display": "BTW/USDT"},
+    {"symbol": "BINANCE:BTWUSDT.P", "timeframe": "5m", "display": "BTW/USDT"},
 ]
 
 TV_INTERVALS = {
