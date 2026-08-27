@@ -64,6 +64,7 @@ TV_INTERVALS = {
 BB_LENGTH = 20
 BB_MULT = 2.0
 VOL_MULTIPLIER = 1.2
+ALVO_MULTIPLo = 2.0
 CHECK_INTERVAL_SECONDS = 15
 # ========================================================================
 
@@ -115,19 +116,11 @@ def calcular_sinais(df, bb_length, bb_mult, vol_multiplier):
     df["entrada_compra"] = df["tocou_inferior"] & df["volume_ok"]
     df["entrada_venda"] = df["tocou_superior"] & df["volume_ok"]
 
-    # ATR para stops
-    high_low = df["high"] - df["low"]
-    high_close = (df["high"] - df["close"].shift()).abs()
-    low_close = (df["low"] - df["close"].shift()).abs()
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    df["atr"] = tr.rolling(14).mean()
-
-    # Stop e alvo (R:R 1:2)
-    RR_RATIO = 2.0
-    df["stop_compra"] = df["lower_band"] - df["atr"]
-    df["alvo_compra"] = df["close"] + (df["close"] - df["stop_compra"]) * RR_RATIO
-    df["stop_venda"] = df["upper_band"] + df["atr"]
-    df["alvo_venda"] = df["close"] - (df["stop_venda"] - df["close"]) * RR_RATIO
+    # Stop = low/high da vela, R:R = alvoMultiplo
+    df["stop_compra"] = df["low"]
+    df["alvo_compra"] = df["close"] + (df["close"] - df["low"]) * ALVO_MULTIPLo
+    df["stop_venda"] = df["high"]
+    df["alvo_venda"] = df["close"] - (df["high"] - df["close"]) * ALVO_MULTIPLo
 
     return df
 
@@ -218,23 +211,26 @@ def monitor_loop():
                     ultimos_timestamps[symbol] = ts
 
                     if vela["entrada_compra"]:
+                        entrada = vela["close"]
                         stop = vela["stop_compra"]
                         alvo = vela["alvo_compra"]
-                        msg = (f"[{display} {timeframe} | {agora:%d/%m %H:%M}] "
-                               f"COMPRA - preco: {vela['close']:.6f}\n"
-                               f"Stop: {stop:.6f} | Alvo: {alvo:.6f}\n"
-                               f"R:R 1:2")
+                        msg = (f"[{display} {timeframe} | {agora:%d/%m %H:%M}]\n"
+                               f"COMPRA\n"
+                               f"Entrada: {entrada:.6f}\n"
+                               f"Stop Loss: {stop:.6f}\n"
+                               f"Take Win: {alvo:.6f}\n"
+                               f"R:R 1:{ALVO_MULTIPLo:.0f}")
                         print(msg)
                         logging.info(msg)
                         tocar_som()
-                        notificar(f"COMPRA {display} ({timeframe})", msg)
+                        notificar(f"COMPRA {display}", msg)
                         enviar_telegram(msg)
                         ESTADO["sinais_gerados"] += 1
 
                         resultados["historico"].append({
                             "par": display,
                             "sinal": "COMPRA",
-                            "preco": float(vela["close"]),
+                            "preco": float(entrada),
                             "stop": float(stop),
                             "alvo": float(alvo),
                             "data": agora.strftime("%d/%m %H:%M"),
@@ -242,23 +238,26 @@ def monitor_loop():
                         salvar_json(RESULTADOS_FILE, resultados)
 
                     elif vela["entrada_venda"]:
+                        entrada = vela["close"]
                         stop = vela["stop_venda"]
                         alvo = vela["alvo_venda"]
-                        msg = (f"[{display} {timeframe} | {agora:%d/%m %H:%M}] "
-                               f"VENDA - preco: {vela['close']:.6f}\n"
-                               f"Stop: {stop:.6f} | Alvo: {alvo:.6f}\n"
-                               f"R:R 1:2")
+                        msg = (f"[{display} {timeframe} | {agora:%d/%m %H:%M}]\n"
+                               f"VENDA\n"
+                               f"Entrada: {entrada:.6f}\n"
+                               f"Stop Loss: {stop:.6f}\n"
+                               f"Take Win: {alvo:.6f}\n"
+                               f"R:R 1:{ALVO_MULTIPLo:.0f}")
                         print(msg)
                         logging.info(msg)
                         tocar_som()
-                        notificar(f"VENDA {display} ({timeframe})", msg)
+                        notificar(f"VENDA {display}", msg)
                         enviar_telegram(msg)
                         ESTADO["sinais_gerados"] += 1
 
                         resultados["historico"].append({
                             "par": display,
                             "sinal": "VENDA",
-                            "preco": float(vela["close"]),
+                            "preco": float(entrada),
                             "stop": float(stop),
                             "alvo": float(alvo),
                             "data": agora.strftime("%d/%m %H:%M"),
