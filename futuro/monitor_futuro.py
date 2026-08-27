@@ -45,7 +45,7 @@ logging.getLogger().addHandler(_bufh)
 
 from tvDatafeed import TvDatafeed, Interval
 
-# ===================== CONFIGURACOES =====================
+# ===================== CONFIGURACOES (igual ao Pine) =====================
 ATIVOS = [
     {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "3m", "display": "COLLECT/USDT"},
     {"symbol": "BINANCE:BTWUSDT.P", "timeframe": "15m", "display": "BTW/USDT"},
@@ -65,7 +65,7 @@ BB_LENGTH = 20
 BB_MULT = 2.0
 VOL_MULTIPLIER = 1.2
 CHECK_INTERVAL_SECONDS = 15
-# =========================================================
+# ========================================================================
 
 ESTADO = {
     "modo": "BOLLINGER",
@@ -122,7 +122,7 @@ def calcular_sinais(df, bb_length, bb_mult, vol_multiplier):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     df["atr"] = tr.rolling(14).mean()
 
-    # Stop e alvo
+    # Stop e alvo (R:R 1:2)
     RR_RATIO = 2.0
     df["stop_compra"] = df["lower_band"] - df["atr"]
     df["alvo_compra"] = df["close"] + (df["close"] - df["stop_compra"]) * RR_RATIO
@@ -167,7 +167,6 @@ def get_tv_client():
 
 
 def buscar_candles_tv(symbol, timeframe, limit=100):
-    """Busca candles do TradingView."""
     tv = get_tv_client()
     interval = TV_INTERVALS.get(timeframe)
     if not interval:
@@ -187,7 +186,6 @@ def monitor_loop():
         from futuro.telegram import enviar_mensagem
         enviar_mensagem(
             "🟢⚡ SMC BOT BOLLINGER ONLINE!\n"
-            "Fonte: TradingView\n"
             "Monitorando:\n"
             "- COLLECT/USDT (3m)\n"
             "- BTW/USDT (15m)\n"
@@ -229,7 +227,7 @@ def monitor_loop():
                         print(msg)
                         logging.info(msg)
                         tocar_som()
-                        notificar(f"Sinal de COMPRA - {display} ({timeframe})", msg)
+                        notificar(f"COMPRA {display} ({timeframe})", msg)
                         enviar_telegram(msg)
                         ESTADO["sinais_gerados"] += 1
 
@@ -253,7 +251,7 @@ def monitor_loop():
                         print(msg)
                         logging.info(msg)
                         tocar_som()
-                        notificar(f"Sinal de VENDA - {display} ({timeframe})", msg)
+                        notificar(f"VENDA {display} ({timeframe})", msg)
                         enviar_telegram(msg)
                         ESTADO["sinais_gerados"] += 1
 
