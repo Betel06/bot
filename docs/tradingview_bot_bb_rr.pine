@@ -1,0 +1,91 @@
+//@version=5
+// Bot BB R:R - COLLECT/BTW (3m/5m)
+// Replica o bot futuro (Bollinger 20/2 + volume 1.2x), alvo FIXO = risco x alvoMult (default 2.0, igual ao bot).
+//   COMPRA: SL = low do candle | SW = close + (close-low)*alvoMult
+//   VENDA : SL = high do candle | SW = close - (high-close)*alvoMult
+// Linhas de SL/SW nascem no candle de entrada, vao SO para a frente (extend.right),
+// acompanham o trade e SOMEM quando o trade fecha (contador strategy.closedtrades).
+// Para testar 3x1: alterar o input "Alvo (x do risco)" para 3.0
+strategy("Bot BB R:R - COLLECT/BTW (3m/5m)", overlay=true, initial_capital=100, default_qty_type=strategy.percent_of_equity, default_qty_value=4, commission_type=strategy.commission.percent, commission_value=0, pyramiding=0)
+
+// ============ INPUTS ============
+bbLen    = input.int(20, "BB Periodo", minval=2)
+bbMult   = input.float(2.0, "BB Multiplicador", step=0.1)
+volMult  = input.float(1.2, "Filtro Volume (x media)", step=0.1)
+alvoMult = input.float(3.0, "Alvo (x do risco) - 2.0 ou 3.0", minval=0.5, step=0.5)
+
+// ============ BOLLINGER ============
+basis = ta.sma(close, bbLen)
+dev   = ta.stdev(close, bbLen)
+upper = basis + dev * bbMult
+lower = basis - dev * bbMult
+
+// ============ VOLUME ============
+volMedia = ta.sma(volume, bbLen)
+volOk    = volume >= volMedia * volMult
+
+// ============ SINAIS ============
+compra = not na(lower) and close <= lower and volOk
+venda  = not na(upper) and close >= upper and volOk
+
+// ============ STOP LOSS / STOP WIN (alvo fixo = risco x alvoMult) ============
+var float stopLong  = na
+var float alvoLong  = na
+var float stopShort = na
+var float alvoShort = na
+
+if compra
+    stopLong  := low
+    alvoLong  := close + (close - low) * alvoMult
+    stopShort := na
+    alvoShort := na
+if venda
+    stopShort := high
+    alvoShort := close - (high - close) * alvoMult
+    stopLong  := na
+    alvoLong  := na
+
+// ============ EXECUCAO (stop + alvo num exit so, igual ao bot) ============
+enterLong  = compra and strategy.position_size == 0
+enterShort = venda  and strategy.position_size == 0
+
+if enterLong
+    strategy.entry("Compra", strategy.long)
+    strategy.exit("Saida Compra", "Compra", stop=stopLong, limit=alvoLong)
+if enterShort
+    strategy.entry("Venda", strategy.short)
+    strategy.exit("Saida Venda", "Venda", stop=stopShort, limit=alvoShort)
+
+// ============ LINHAS ============
+var line slLine   = na
+var line swLine   = na
+var bool temLinha = false
+var int  nFechados = 0
+
+// QUALQUER trade que fechar (SL ou SW) -> linhas SOMEM na hora
+if strategy.closedtrades > nFechados
+    if temLinha
+        line.delete(slLine)
+        line.delete(swLine)
+    slLine   := na
+    swLine   := na
+    temLinha := false
+    nFechados := strategy.closedtrades
+
+// entrada nova -> linhas horizontais do candle, SO PRA FRENTE
+if enterLong
+    slLine := line.new(bar_index, stopLong,  bar_index + 1, stopLong,  extend=extend.right, color=color.new(color.red, 0),   width=2)
+    swLine := line.new(bar_index, alvoLong,  bar_index + 1, alvoLong,  extend=extend.right, color=color.new(color.green, 0), width=2)
+    temLinha := true
+
+if enterShort
+    slLine := line.new(bar_index, stopShort, bar_index + 1, stopShort, extend=extend.right, color=color.new(color.red, 0),   width=2)
+    swLine := line.new(bar_index, alvoShort, bar_index + 1, alvoShort, extend=extend.right, color=color.new(color.green, 0), width=2)
+    temLinha := true
+
+// ============ VISUAL ============
+plot(basis, "Media (20)", color=color.gray, linewidth=1)
+plot(upper, "Banda Sup", color=color.new(color.red, 20))
+plot(lower, "Banda Inf", color=color.new(color.green, 20))
+plotshape(enterLong, "COMPRA", shape.triangleup, location.belowbar, color.new(color.green, 0), size=size.small)
+plotshape(enterShort, "VENDA", shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.small)

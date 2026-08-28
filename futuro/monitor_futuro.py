@@ -64,7 +64,7 @@ TV_INTERVALS = {
 BB_LENGTH = 20
 BB_MULT = 2.0
 VOL_MULTIPLIER = 1.2
-ALVO_MULTIPLo = 2.0
+ALVO_MULTIPLo = 3.0
 CHECK_INTERVAL_SECONDS = 15
 
 # ===================== BANCA FAKE =====================
