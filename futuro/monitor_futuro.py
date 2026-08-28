@@ -48,6 +48,7 @@ from tvDatafeed import TvDatafeed, Interval
 # ===================== CONFIGURACOES (igual ao Pine) =====================
 ATIVOS = [
     {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "3m", "display": "COLLECT/USDT (3m)"},
+    {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "5m", "display": "COLLECT/USDT (5m)"},
     {"symbol": "BINANCE:BTWUSDT.P", "timeframe": "5m", "display": "BTW/USDT (5m)"},
     {"symbol": "BINANCE:BTWUSDT.P", "timeframe": "15m", "display": "BTW/USDT (15m)"},
 ]
@@ -489,6 +490,7 @@ def monitor_loop():
             f"{'='*30}\n"
             f"Monitorando:\n"
             f"- COLLECT/USDT (3m)\n"
+            f"- COLLECT/USDT (5m)\n"
             f"- BTW/USDT (5m)\n"
             f"- BTW/USDT (15m)\n"
             f"{'='*30}"
