@@ -75,6 +75,12 @@ VOL_MULTIPLIER = 1.2
 ALVO_MULTIPLo = 3.0
 CHECK_INTERVAL_SECONDS = 15
 
+# Filtro SMC de tendencia: so opera a favor da estrutura (alta = so COMPRA,
+# baixa = so VENDA), com a MESMA defasagem do grafico (pivo confirma pivot_len
+# velas depois; tendencia muda quando o CLOSE rompe topo/fundo).
+FILTRO_SMC = os.environ.get("FILTRO_SMC_TENDENCIA", "1") != "0"
+SMC_PIVOT_LEN = int(os.environ.get("SMC_PIVOT_LEN", "10"))
+
 # ===================== BANCA FAKE =====================
 BANCO_INICIAL = 100.0
 ALAVANCAGEM = 2.0
@@ -266,6 +272,42 @@ def fechar_posicao(banca_data, pos_id, motivo, preco_saida):
     return msg
 
 
+def calcular_estrutura_smc(df, pivot_len):
+    """Estrutura SMC identica ao Pine do grafico: pivos confirmados pivot_len
+    velas depois (mesma defasagem), tendencia so muda quando o CLOSE rompe
+    topo/fundo (BOS/CHoCH). Retorna coluna smc_tendencia."""
+    import numpy as np
+    n = len(df)
+    hi = df["high"].to_numpy(dtype=float)
+    lo = df["low"].to_numpy(dtype=float)
+    cl = df["close"].to_numpy(dtype=float)
+    ph = np.full(n, np.nan)
+    pl = np.full(n, np.nan)
+    for i in range(pivot_len, n - pivot_len):
+        if hi[i] == (hi[i-pivot_len:i+pivot_len+1]).max():
+            ph[i] = hi[i]
+        if lo[i] == (lo[i-pivot_len:i+pivot_len+1]).min():
+            pl[i] = lo[i]
+    ultimo_topo = None
+    ultimo_fundo = None
+    tendencia = "indefinida"
+    tendencias = []
+    for i in range(n):
+        k = i - pivot_len
+        if k >= 0 and not np.isnan(ph[k]):
+            ultimo_topo = float(ph[k])
+        if k >= 0 and not np.isnan(pl[k]):
+            ultimo_fundo = float(pl[k])
+        prev_close = cl[i-1] if i >= 1 else np.nan
+        if ultimo_topo is not None and not np.isnan(prev_close) and cl[i] > ultimo_topo >= prev_close:
+            tendencia = "alta"
+        if ultimo_fundo is not None and not np.isnan(prev_close) and cl[i] < ultimo_fundo <= prev_close:
+            tendencia = "baixa"
+        tendencias.append(tendencia)
+    df["smc_tendencia"] = tendencias
+    return df
+
+
 def calcular_sinais(df, bb_length, bb_mult, vol_multiplier):
     import pandas as pd
     df = df.copy()
@@ -282,6 +324,11 @@ def calcular_sinais(df, bb_length, bb_mult, vol_multiplier):
 
     df["entrada_compra"] = df["tocou_inferior"] & df["volume_ok"]
     df["entrada_venda"] = df["tocou_superior"] & df["volume_ok"]
+
+    if FILTRO_SMC:
+        df = calcular_estrutura_smc(df, SMC_PIVOT_LEN)
+        df["entrada_compra"] = df["entrada_compra"] & (df["smc_tendencia"] == "alta")
+        df["entrada_venda"] = df["entrada_venda"] & (df["smc_tendencia"] == "baixa")
 
     df["stop_compra"] = df["low"]
     df["alvo_compra"] = df["close"] + (df["close"] - df["low"]) * ALVO_MULTIPLo
@@ -438,6 +485,7 @@ def monitor_loop():
             f"🔧 Alavancagem: {ALAVANCAGEM}x\n"
             f"📊 Risco/trade: {RISCO_POR_TRADE*100:.0f}%\n"
             f"🔒 Persistencia: {'GitHub ON' if PERSIST_DISPONIVEL else 'local'}\n"
+            f"🧭 Filtro SMC: {'ON (so a favor da estrutura)' if FILTRO_SMC else 'off'}\n"
             f"{'='*30}\n"
             f"Monitorando:\n"
             f"- COLLECT/USDT (3m)\n"
@@ -557,6 +605,11 @@ def criar_app():
             "bot": "futuro_bollinger",
             "status": "online",
             "estrategia": "Bollinger Bands",
+            "filtro_smc": {
+                "ativo": FILTRO_SMC,
+                "pivot_len": SMC_PIVOT_LEN,
+                "regra": "COMPRA so em tendencia ALTA | VENDA so em tendencia BAIXA",
+            },
             "persistencia": "github" if PERSIST_DISPONIVEL else "local",
             "banca": {
                 "atual": round(b["banca"], 2),
