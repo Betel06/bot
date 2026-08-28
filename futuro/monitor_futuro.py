@@ -47,9 +47,17 @@ from tvDatafeed import TvDatafeed, Interval
 
 # ===================== CONFIGURACOES (igual ao Pine) =====================
 ATIVOS = [
-    {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "3m", "display": "COLLECT/USDT"},
-    {"symbol": "BINANCE:BTWUSDT.P", "timeframe": "5m", "display": "BTW/USDT"},
+    {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "3m", "display": "COLLECT/USDT (3m)"},
+    {"symbol": "BINANCE:BTWUSDT.P", "timeframe": "5m", "display": "BTW/USDT (5m)"},
+    {"symbol": "BINANCE:BTWUSDT.P", "timeframe": "15m", "display": "BTW/USDT (15m)"},
 ]
+
+# Cada ativo+timeframe vira uma chave propria: posicao e timestamps separados,
+# entao o BTW 5m e o BTW 15m operam em paralelo sem bloquear um ao outro.
+MIGRACAO_CHAVES = {
+    "BINANCE:COLLECTUSDT.P": "BINANCE:COLLECTUSDT.P|3m",
+    "BINANCE:BTWUSDT.P": "BINANCE:BTWUSDT.P|5m",
+}
 
 TV_INTERVALS = {
     "1m": Interval.in_1_minute,
@@ -132,6 +140,21 @@ def _merge_banca(origem, padrao):
         for k in ["posicoes_abertas", "historico", "ultimos_timestamps"]:
             if isinstance(origem.get(k), (dict, list)):
                 dados[k] = origem[k]
+
+    # migra chaves antigas (so symbol) para chave symbol|timeframe
+    posicoes = {}
+    for pid, p in (dados.get("posicoes_abertas") or {}).items():
+        if isinstance(p, dict):
+            p = dict(p)
+            p["symbol"] = MIGRACAO_CHAVES.get(p.get("symbol"), p.get("symbol") or p["symbol"])
+            posicoes[pid] = p
+    dados["posicoes_abertas"] = posicoes
+
+    timestamps = {}
+    for k, v in (dados.get("ultimos_timestamps") or {}).items():
+        timestamps[MIGRACAO_CHAVES.get(k, k)] = v
+    dados["ultimos_timestamps"] = timestamps
+
     return dados
 
 
@@ -418,6 +441,7 @@ def monitor_loop():
             f"{'='*30}\n"
             f"Monitorando:\n"
             f"- COLLECT/USDT (3m)\n"
+            f"- BTW/USDT (5m)\n"
             f"- BTW/USDT (15m)\n"
             f"{'='*30}"
         )
@@ -435,13 +459,14 @@ def monitor_loop():
             symbol = ativo["symbol"]
             display = ativo["display"]
             timeframe = ativo["timeframe"]
+            chave = f"{symbol}|{timeframe}"
 
             try:
                 df = buscar_candles_tv(symbol, timeframe, limit=100)
                 df = calcular_sinais(df, BB_LENGTH, BB_MULT, VOL_MULTIPLIER)
 
                 ult_timestamps = banca_data.setdefault("ultimos_timestamps", {})
-                ult_bruto = ult_timestamps.get(symbol)
+                ult_bruto = ult_timestamps.get(chave)
 
                 # a partir de qual indice processar (velas fechadas novas)
                 inicio = 0
@@ -458,16 +483,16 @@ def monitor_loop():
                     inicio = len(df) - 2
 
                 # checar fechamentos de posicoes nas velas novas
-                msgs = checar_fechamentos(banca_data, symbol, df, inicio)
+                msgs = checar_fechamentos(banca_data, chave, df, inicio)
 
                 # processar velas novas (sinais)
                 for i in range(inicio, len(df) - 1):
                     vela = df.iloc[i]
-                    msgs += processar_vela(banca_data, ativo, symbol, display, timeframe, vela, agora)
-                    ult_timestamps[symbol] = str(df.iloc[i]["abertura_tempo"])
+                    msgs += processar_vela(banca_data, ativo, chave, display, timeframe, vela, agora)
+                    ult_timestamps[chave] = str(df.iloc[i]["abertura_tempo"])
 
                 if inicio < len(df) - 1:
-                    ult_timestamps[symbol] = str(df.iloc[len(df) - 2]["abertura_tempo"])
+                    ult_timestamps[chave] = str(df.iloc[len(df) - 2]["abertura_tempo"])
                     salvar_banca(banca_data)
 
                 for m in msgs:
