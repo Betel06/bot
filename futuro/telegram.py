@@ -6,25 +6,35 @@ BOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def carregar_config():
     token = os.environ.get("TELEGRAM_TOKEN") or os.environ.get("TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID") or os.environ.get("CHAT_ID")
-    return token, chat_id
+    chat_ids = os.environ.get("TELEGRAM_CHAT_ID") or os.environ.get("CHAT_ID")
+    if chat_ids:
+        chat_ids = [c.strip() for c in str(chat_ids).replace(";", ",").split(",") if c.strip()]
+    else:
+        chat_ids = []
+    return token, chat_ids
 
 
-def enviar_mensagem(texto):
-    token, chat_id = carregar_config()
-    if not token or not chat_id:
+def enviar_mensagem(texto, chat_id=None):
+    token, chats = carregar_config()
+    if not token or not chats:
         return False, "Telegram nao configurado"
 
-    url = "https://api.telegram.org/bot{}/sendMessage".format(token)
-    payload = {"chat_id": chat_id, "text": texto}
+    alvos = [str(chat_id)] if chat_id else chats
 
-    try:
-        resposta = requests.post(url, json=payload, timeout=10)
-        if resposta.status_code == 200:
-            return True, "OK"
-        return False, "Erro {}".format(resposta.status_code)
-    except Exception as e:
-        return False, str(e)
+    url = "https://api.telegram.org/bot{}/sendMessage".format(token)
+    ok = False
+    ultimo_erro = None
+    for cid in alvos:
+        payload = {"chat_id": cid, "text": texto}
+        try:
+            resposta = requests.post(url, json=payload, timeout=10)
+            if resposta.status_code == 200:
+                ok = True
+            else:
+                ultimo_erro = "Erro {} em {}".format(resposta.status_code, cid)
+        except Exception as e:
+            ultimo_erro = str(e)
+    return (ok, "OK") if ok else (False, ultimo_erro or "erro")
 
 
 def formatar_sinal(sinal):
