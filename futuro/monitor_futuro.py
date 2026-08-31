@@ -444,6 +444,19 @@ def monitor_loop():
 
     resultados = carregar_resultados()
 
+    # limpa posicoes orfas (par/timeframe que saiu do ATIVOS): nunca mais seriam monitoradas
+    chaves_ativas = {f"{a['symbol']}|{a['timeframe']}" for a in ATIVOS}
+    removeu = False
+    for pos_id, pos in list(banca_data["posicoes_abertas"].items()):
+        if pos.get("symbol") not in chaves_ativas:
+            banca_data["posicoes_abertas"].pop(pos_id, None)
+            removeu = True
+            log_msg = f"Cancela posicao orfa (par fora do monitoramento): {pos.get('par')} [{pos.get('sinal')}]"
+            print(log_msg)
+            logging.info(log_msg)
+    if removeu:
+        salvar_banca(banca_data)
+
     rodada = 0
     while True:
         rodada += 1
