@@ -1,7 +1,11 @@
+import os
+
 import numpy as np
 import pandas as pd
 
-ESE_RATIO = 3.0  # R:R alvo/stop (risco = 1 ATR, alvo = 3 ATR)
+# Stop na estrutura: swing mais recente confirmado (pivot_len velas de atraso).
+SWING_PIVOT_LEN = int(os.environ.get("SMC_PIVOT_LEN", "5"))
+RR_ESTRUTURA = 3.0  # alvo de referência (display); a SAIDA real é na virada do sinal
 
 # ── Parametros padrao (iguais ao Pine amb_v2_pt.pine) ────────────────
 BASE_LEN = 8
@@ -33,11 +37,8 @@ def _atr(high, low, close, comprimento):
 
 def calcular_amb(df):
     """Aplica a logica do indicador AMB v2 (© Uptrick, CC BY-SA 4.0) em um
-    DataFrame de OHLCV (colunas high/low/close/volume). Retorna o mesmo df com:
-
-      is_bull / sinal_compra / sinal_venda / entrada_compra / entrada_venda
-      stop_compra / alvo_compra / stop_venda / alvo_venda
-      amr_line / upper_band / lower_band
+    DataFrame de OHLCV. Retorna o mesmo df com is_bull, sinal_compra,
+    sinal_venda, entrada_compra, entrada_venda e as bandas.
 
     A entrada (Compra/Venda) e a virada confirmada da tendencia, igual ao
     sinal 'ENTRADA COMPRA/VENDA (AMB)' do Pine.
@@ -105,9 +106,6 @@ def calcular_amb(df):
         elif estado[i] == -1 and estado[i - 1] == 1:
             sinal_venda[i] = True
 
-    # ── stop/alvo ATR-based (risco 1 ATR, alvo 3 ATR) ──
-    atr_ref = atr_suave.bfill()
-
     df["is_bull"] = pd.Series(is_bull, index=df.index)
     df["sinal_compra"] = pd.Series(sinal_compra, index=df.index)
     df["sinal_venda"] = pd.Series(sinal_venda, index=df.index)
@@ -116,8 +114,56 @@ def calcular_amb(df):
     df["amr_line"] = amr_line
     df["upper_band"] = upper_band
     df["lower_band"] = lower_band
-    df["stop_compra"] = close - atr_ref
-    df["alvo_compra"] = close + atr_ref * ESE_RATIO
-    df["stop_venda"] = close + atr_ref
-    df["alvo_venda"] = close - atr_ref * ESE_RATIO
+    return df
+
+
+def calcular_stop_estrutura(df, pivot_len=SWING_PIVOT_LEN):
+    """Ancora o stop na estrutura: compra = abaixo do ultimo fundo confirmado,
+    venda = acima do ultimo topo confirmado. O alvo é só referência de R:R
+    (a saída do bot passa a ser na virada do sinal, sem alvo fixo)."""
+    n = len(df)
+    hi = df["high"].to_numpy(dtype=float)
+    lo = df["low"].to_numpy(dtype=float)
+    cl = df["close"].to_numpy(dtype=float)
+
+    fundo = np.full(n, np.nan)
+    topo = np.full(n, np.nan)
+    conf_fundo = np.full(n, np.nan)
+    conf_topo = np.full(n, np.nan)
+    for i in range(pivot_len, n - pivot_len):
+        if lo[i] == lo[i - pivot_len:i + pivot_len + 1].min():
+            fundo[i] = lo[i]
+        if hi[i] == hi[i - pivot_len:i + pivot_len + 1].max():
+            topo[i] = hi[i]
+
+    # confirma o pivot pivot_len velas depois (mesmo atraso do grafico)
+    for i in range(n):
+        k = i + pivot_len
+        if k < n:
+            conf_fundo[k] = fundo[i]
+            conf_topo[k] = topo[i]
+
+    # ultimo fundo/topo confirmado ATE a barra atual
+    last_fundo = np.full(n, np.nan)
+    last_topo = np.full(n, np.nan)
+    lf = np.nan
+    lt = np.nan
+    for i in range(n):
+        if not np.isnan(conf_fundo[i]):
+            lf = conf_fundo[i]
+        if not np.isnan(conf_topo[i]):
+            lt = conf_topo[i]
+        last_fundo[i] = lf
+        last_topo[i] = lt
+
+    # fallback quando ainda nao tem swing confirmado: min/max das ultimas velas
+    roll_low = pd.Series(lo).rolling(pivot_len * 2, min_periods=1).min().to_numpy()
+    roll_high = pd.Series(hi).rolling(pivot_len * 2, min_periods=1).max().to_numpy()
+    last_fundo = np.where(np.isnan(last_fundo), roll_low, last_fundo)
+    last_topo = np.where(np.isnan(last_topo), roll_high, last_topo)
+
+    df["stop_compra"] = last_fundo
+    df["stop_venda"] = last_topo
+    df["alvo_compra"] = cl + (cl - df["stop_compra"]) * RR_ESTRUTURA
+    df["alvo_venda"] = cl - (df["stop_venda"] - cl) * RR_ESTRUTURA
     return df

@@ -49,7 +49,6 @@ from tvDatafeed import TvDatafeed, Interval
 ATIVOS = [
     {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "3m", "display": "COLLECT/USDT (3m)"},
     {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "5m", "display": "COLLECT/USDT (5m)"},
-    {"symbol": "BINANCE:BTWUSDT.P", "timeframe": "5m", "display": "BTW/USDT (5m)"},
     {"symbol": "BINANCE:BTWUSDT.P", "timeframe": "15m", "display": "BTW/USDT (15m)"},
 ]
 
@@ -72,6 +71,7 @@ TV_INTERVALS = {
 
 ALVO_MULTIPLo = 3.0
 CHECK_INTERVAL_SECONDS = 15
+RISCO_CAP_USD = float(os.environ.get("FUTURO_RISCO_CAP_USD", "1.0"))
 
 # ===================== BANCA FAKE =====================
 BANCO_INICIAL = 100.0
@@ -194,8 +194,14 @@ def abrir_posicao(banca_data, display, symbol, sinal, entrada, stop, alvo):
     if risk_per_unit == 0:
         return None, None
 
+    # perda maxima US$1 por trade: tamanho cai se o stop (estrutura) estiver longe
+    risco_pct = risk_per_unit / entrada
     tamanho_usd = banca_data["banca"] * RISCO_POR_TRADE * ALAVANCAGEM
-    risco_usd = tamanho_usd * risk_per_unit / entrada
+    if risco_pct > 0:
+        tamanho_cap = RISCO_CAP_USD / risco_pct
+        if tamanho_cap < tamanho_usd:
+            tamanho_usd = tamanho_cap
+    risco_usd = tamanho_usd * risco_pct
     lucro_pot = tamanho_usd * abs(alvo - entrada) / entrada
 
     pos_id = f"{symbol}_{int(time.time())}"
@@ -265,10 +271,13 @@ def fechar_posicao(banca_data, pos_id, motivo, preco_saida):
 
 
 def calcular_sinais(df):
-    """Motor de sinais AMB v2 (© Uptrick, CC BY-SA 4.0): a entrada dispara na
-    virada confirmada da tendencia (Compra/Venda), igual ao Pine amb_v2_pt.pine."""
-    from futuro.amb import calcular_amb
-    return calcular_amb(df)
+    """Motor AMB v2 (© Uptrick, CC BY-SA 4.0) + stop ancorado na estrutura:
+    entrada na virada Compra/Venda; stop abaixo do ultimo fundo / acima do
+    ultimo topo; saida na virada do sinal (sem alvo fixo)."""
+    from futuro.amb import calcular_amb, calcular_stop_estrutura
+    df = calcular_amb(df)
+    df = calcular_stop_estrutura(df)
+    return df
 
 
 def tocar_som():
@@ -319,12 +328,16 @@ def buscar_candles_tv(symbol, timeframe, limit=100):
 
 
 def checar_fechamentos(banca_data, symbol, df, novo_index):
-    """Ve se as posicoes abertas deste symbol foram tocadas nas velas novas."""
+    """Fecha posicoes deste symbol nas velas novas: stop na estrutura OU
+    saida na virada do sinal AMB (sinal virou pro lado oposto)."""
     msgs = []
     for k in range(novo_index):
         vela = df.iloc[k]
         candle_low = float(vela["low"])
         candle_high = float(vela["high"])
+        candle_close = float(vela["close"])
+        flip_venda = bool(vela.get("sinal_venda", False))
+        flip_compra = bool(vela.get("sinal_compra", False))
 
         pos_para_fechar = []
         for pos_id, pos in list(banca_data["posicoes_abertas"].items()):
@@ -333,13 +346,13 @@ def checar_fechamentos(banca_data, symbol, df, novo_index):
             if pos["sinal"] == "COMPRA":
                 if candle_low <= pos["stop"]:
                     pos_para_fechar.append((pos_id, "Stop Loss", pos["stop"]))
-                elif candle_high >= pos["alvo"]:
-                    pos_para_fechar.append((pos_id, "Take Win", pos["alvo"]))
+                elif flip_venda:
+                    pos_para_fechar.append((pos_id, "Trend Flip", candle_close))
             else:
                 if candle_high >= pos["stop"]:
                     pos_para_fechar.append((pos_id, "Stop Loss", pos["stop"]))
-                elif candle_low <= pos["alvo"]:
-                    pos_para_fechar.append((pos_id, "Take Win", pos["alvo"]))
+                elif flip_compra:
+                    pos_para_fechar.append((pos_id, "Trend Flip", candle_close))
 
         for pos_id, motivo, preco in pos_para_fechar:
             msg = fechar_posicao(banca_data, pos_id, motivo, preco)
@@ -360,44 +373,44 @@ def processar_vela(banca_data, ativo, symbol, display, timeout_tf, vela, agora):
     )
 
     if bool(vela["entrada_compra"]) and not tem_posicao_aberta:
-        pos, pos_id = abrir_posicao(banca_data, display, symbol, "COMPRA", candle_close,
-                                    float(vela["stop_compra"]), float(vela["alvo_compra"]))
-        if pos:
-            msg = (
-                f"🔔 NOVA COMPRA - {display}\n"
-                f"{'='*30}\n"
-                f"Entrada: {candle_close:.6f}\n"
-                f"Stop Loss: {pos['stop']:.6f}\n"
-                f"Take Win: {pos['alvo']:.6f}\n"
-                f"R:R 1:{ALVO_MULTIPLo:.0f}\n"
-                f"{'='*30}\n"
-                f"💰 Tamanho: {pos['tamanho_usd']:.2f} USDT\n"
-                f"📊 Risco: {pos['risco_usd']:.4f} USDT\n"
-                f"🎯 Lucro pot: {pos['lucro_pot']:.4f} USDT\n"
-                f"{'='*30}"
-            )
-            msgs.append(msg)
-            ESTADO["sinais_gerados"] += 1
+        stop_p = float(vela["stop_compra"])
+        if stop_p < candle_close:  # stop valido: abaixo do ultimo fundo
+            pos, pos_id = abrir_posicao(banca_data, display, symbol, "COMPRA", candle_close,
+                                        stop_p, float(vela["alvo_compra"]))
+            if pos:
+                msg = (
+                    f"🔔 NOVA COMPRA - {display}\n"
+                    f"{'='*30}\n"
+                    f"Entrada: {candle_close:.6f}\n"
+                    f"Stop: {pos['stop']:.6f} (abaixo do ultimo fundo)\n"
+                    f"Saida: quando o sinal virar (trend flip)\n"
+                    f"{'='*30}\n"
+                    f"💰 Tamanho: {pos['tamanho_usd']:.2f} USDT\n"
+                    f"📊 Risco (max US${RISCO_CAP_USD:.0f}): {pos['risco_usd']:.4f} USDT\n"
+                    f"{'='*30}"
+                )
+                msgs.append(msg)
+                ESTADO["sinais_gerados"] += 1
 
     elif bool(vela["entrada_venda"]) and not tem_posicao_aberta:
-        pos, pos_id = abrir_posicao(banca_data, display, symbol, "VENDA", candle_close,
-                                    float(vela["stop_venda"]), float(vela["alvo_venda"]))
-        if pos:
-            msg = (
-                f"🔔 NOVA VENDA - {display}\n"
-                f"{'='*30}\n"
-                f"Entrada: {candle_close:.6f}\n"
-                f"Stop Loss: {pos['stop']:.6f}\n"
-                f"Take Win: {pos['alvo']:.6f}\n"
-                f"R:R 1:{ALVO_MULTIPLo:.0f}\n"
-                f"{'='*30}\n"
-                f"💰 Tamanho: {pos['tamanho_usd']:.2f} USDT\n"
-                f"📊 Risco: {pos['risco_usd']:.4f} USDT\n"
-                f"🎯 Lucro pot: {pos['lucro_pot']:.4f} USDT\n"
-                f"{'='*30}"
-            )
-            msgs.append(msg)
-            ESTADO["sinais_gerados"] += 1
+        stop_p = float(vela["stop_venda"])
+        if stop_p > candle_close:  # stop valido: acima do ultimo topo
+            pos, pos_id = abrir_posicao(banca_data, display, symbol, "VENDA", candle_close,
+                                        stop_p, float(vela["alvo_venda"]))
+            if pos:
+                msg = (
+                    f"🔔 NOVA VENDA - {display}\n"
+                    f"{'='*30}\n"
+                    f"Entrada: {candle_close:.6f}\n"
+                    f"Stop: {pos['stop']:.6f} (acima do ultimo topo)\n"
+                    f"Saida: quando o sinal virar (trend flip)\n"
+                    f"{'='*30}\n"
+                    f"💰 Tamanho: {pos['tamanho_usd']:.2f} USDT\n"
+                    f"📊 Risco (max US${RISCO_CAP_USD:.0f}): {pos['risco_usd']:.4f} USDT\n"
+                    f"{'='*30}"
+                )
+                msgs.append(msg)
+                ESTADO["sinais_gerados"] += 1
 
     if not msgs:
         logging.info(f"[{display} {timeout_tf}] Sem sinal - preco: {candle_close:.6f}")
@@ -416,14 +429,13 @@ def monitor_loop():
             f"{'='*30}\n"
             f"💰 Banca: {banca_data['banca']:.2f} USDT\n"
             f"🔧 Alavancagem: {ALAVANCAGEM}x\n"
-            f"📊 Risco/trade: {RISCO_POR_TRADE*100:.0f}%\n"
-            f"🔄 Sinal: virada do AMB (Compra/Venda 5m)\n"
+            f"📊 Risco max/trade: US${RISCO_CAP_USD:.0f}\n"
+            f"🔄 Entrada: virada do AMB | Saida: stop no ultimo fundo/topo ou trend flip\n"
             f"🔒 Persistencia: {'GitHub ON' if PERSIST_DISPONIVEL else 'local'}\n"
             f"{'='*30}\n"
             f"Monitorando:\n"
             f"- COLLECT/USDT (3m)\n"
             f"- COLLECT/USDT (5m)\n"
-            f"- BTW/USDT (5m)\n"
             f"- BTW/USDT (15m)\n"
             f"{'='*30}"
         )
@@ -539,7 +551,9 @@ def criar_app():
             "bot": "futuro_amb",
             "status": "online",
             "estrategia": "Banda Momentum Adaptativa (AMB v2)",
-            "sinal": "COMPRA/VENDA na virada de tendencia (5m)",
+            "sinal": "Entrada na virada da tendencia | Stop abaixo do ultimo fundo/topo | Saida no trend flip | Perda max US$1",
+            "risco_cap_usd": RISCO_CAP_USD,
+            "pivot_len": int(os.environ.get("SMC_PIVOT_LEN", "5")),
             "persistencia": "github" if PERSIST_DISPONIVEL else "local",
             "banca": {
                 "atual": round(b["banca"], 2),
