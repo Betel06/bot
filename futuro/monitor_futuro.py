@@ -11,6 +11,8 @@ BRT = timezone(timedelta(hours=-3))
 
 import requests
 
+import pandas as pd
+
 BOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BOT_DIR)
 os.chdir(BOT_DIR)
@@ -74,6 +76,9 @@ CHECK_INTERVAL_SECONDS = 15
 BANCO_INICIAL = 100.0
 ALAVANCAGEM = 2.0
 RISCO_POR_TRADE = 0.02
+STOP_PCT = 0.04  # stop fixo de protecao por trade (4%, validado no backtest)
+TP_RR = 3.0  # take profit em R:R 1:3 (validado no backtest)
+MAX_HOLD_CANDLES = 96  # max 8h (96 velas 5m) numa posicao; depois fecha no mercado
 # ========================================================================
 
 ESTADO = {
@@ -186,25 +191,44 @@ def carregar_resultados():
     return carregar_json(RESULTADOS_FILE, {"wins": 0, "losses": 0, "total_lucro": 0.0, "historico": []})
 
 
-def abrir_posicao(banca_data, display, symbol, sinal, entrada, stop, alvo):
+def abrir_posicao(banca_data, display, symbol, sinal, entrada, stop, alvo, entrada_tempo=None):
     # sem stop fixo: tamanho constante ate a virada do sinal
     tamanho_usd = banca_data["banca"] * RISCO_POR_TRADE * ALAVANCAGEM
     risco_usd = 0.0
     lucro_pot = 0.0
 
     pos_id = f"{symbol}_{int(time.time())}"
+    # stop fixo de protecao (% da entrada). Para compra = preco abaixo, venda = acima.
+    if sinal == "COMPRA":
+        stop_fixo = float(entrada) * (1 - STOP_PCT)
+        stop_uso = stop_fixo
+        if isinstance(stop, (int, float)) and stop == stop:  # nao-NaN
+            if float(stop) < float(entrada):  # estrutura valida abaixo
+                stop_uso = float(stop) if float(stop) > stop_fixo else stop_fixo
+        risco = float(entrada) - stop_uso
+        alvo_uso = float(entrada) + risco * TP_RR
+    else:
+        stop_fixo = float(entrada) * (1 + STOP_PCT)
+        stop_uso = stop_fixo
+        if isinstance(stop, (int, float)) and stop == stop:
+            if float(stop) > float(entrada):  # estrutura valida acima
+                stop_uso = float(stop) if float(stop) < stop_fixo else stop_fixo
+        risco = stop_uso - float(entrada)
+        alvo_uso = float(entrada) - risco * TP_RR
+
     posicao = {
         "id": pos_id,
         "par": display,
         "symbol": symbol,
         "sinal": sinal,
         "entrada": float(entrada),
-        "stop": float(stop),
-        "alvo": float(alvo),
+        "stop": float(stop_uso),
+        "alvo": float(alvo_uso),
         "tamanho_usd": float(tamanho_usd),
         "risco_usd": float(risco_usd),
         "lucro_pot": float(lucro_pot),
         "data_entrada": datetime.now(BRT).strftime("%d/%m %H:%M"),
+        "tempo_entrada": entrada_tempo,
     }
     banca_data["posicoes_abertas"][pos_id] = posicao
     salvar_banca(banca_data)
@@ -316,28 +340,69 @@ def buscar_candles_tv(symbol, timeframe, limit=100):
 
 
 def checar_fechamentos(banca_data, symbol, df, novo_index):
-    """Fecha posicoes deste symbol quando o sinal AMB VIRA pro lado oposto:
-    COMPRA so sai se virar VENDA; VENDA so sai se virar COMPRA. Sem stop fixo."""
+    """Fecha posicoes deste symbol:
+      - por stop fixo (4%) se o preco tocar o stop;
+      - por take profit no alvo (R:R 1:3);
+      - por tempo maximo (MAX_HOLD_CANDLES) para nao prender capital.
+    Somente avalia velas posteriores a 'tempo_entrada' da posicao (evita
+    fechamento retrogrado), e somente velas ja fechadas (range até novo_index)."""
     msgs = []
     for k in range(novo_index):
         vela = df.iloc[k]
         candle_close = float(vela["close"])
-        flip_venda = bool(vela.get("sinal_venda", False))
-        flip_compra = bool(vela.get("sinal_compra", False))
+        candle_low = float(vela["low"])
+        candle_high = float(vela["high"])
+        try:
+            candle_tempo = vela["abertura_tempo"]
+        except Exception:
+            candle_tempo = df.index[k]
 
-        pos_para_fechar = []
+        flipped = False
         for pos_id, pos in list(banca_data["posicoes_abertas"].items()):
             if pos["symbol"] != symbol:
                 continue
-            if pos["sinal"] == "COMPRA" and flip_venda:
-                pos_para_fechar.append((pos_id, "Trend Flip", candle_close))
-            elif pos["sinal"] == "VENDA" and flip_compra:
-                pos_para_fechar.append((pos_id, "Trend Flip", candle_close))
+            tempo_ent = pos.get("tempo_entrada")
+            if tempo_ent is not None:
+                try:
+                    if pd.to_datetime(candle_tempo) < pd.to_datetime(tempo_ent):
+                        continue  # vela anterior a entrada: ignora
+                except Exception:
+                    pass
+            stop_preco = pos.get("stop")
+            alvo_preco = pos.get("alvo")
+            motivo = None
+            preco_saida = None
 
-        for pos_id, motivo, preco in pos_para_fechar:
-            msg = fechar_posicao(banca_data, pos_id, motivo, preco)
-            if msg:
-                msgs.append(msg)
+            # 1) stop fixo de protecao
+            if stop_preco is not None and stop_preco == stop_preco:
+                if pos["sinal"] == "COMPRA" and candle_low <= stop_preco:
+                    motivo, preco_saida = "Stop (4%)", stop_preco
+                elif pos["sinal"] == "VENDA" and candle_high >= stop_preco:
+                    motivo, preco_saida = "Stop (4%)", stop_preco
+
+            # 2) take profit no alvo (R:R 1:3)
+            if motivo is None and alvo_preco is not None and alvo_preco == alvo_preco:
+                if pos["sinal"] == "COMPRA" and candle_high >= alvo_preco:
+                    motivo, preco_saida = "Take Profit (1:3)", alvo_preco
+                elif pos["sinal"] == "VENDA" and candle_low <= alvo_preco:
+                    motivo, preco_saida = "Take Profit (1:3)", alvo_preco
+
+            # 3) tempo maximo de permanencia
+            if motivo is None and tempo_ent is not None:
+                try:
+                    vela_i = pd.to_datetime(candle_tempo)
+                    ent_i = pd.to_datetime(tempo_ent)
+                    horas_hold = (vela_i - ent_i).total_seconds() / 3600.0
+                    if horas_hold >= MAX_HOLD_CANDLES * 5 / 60.0:
+                        motivo = f"Tempo Max ({MAX_HOLD_CANDLES} velas)"
+                        preco_saida = candle_close
+                except Exception:
+                    pass
+
+            if motivo:
+                msg = fechar_posicao(banca_data, pos_id, motivo, preco_saida)
+                if msg:
+                    msgs.append(msg)
     return msgs
 
 
@@ -347,6 +412,11 @@ def processar_vela(banca_data, ativo, symbol, display, timeout_tf, vela, agora):
     candle_low = float(vela["low"])
     candle_high = float(vela["high"])
     candle_close = float(vela["close"])
+    tempo_entrada = None
+    try:
+        tempo_entrada = str(vela["abertura_tempo"])
+    except Exception:
+        pass
 
     tem_posicao_aberta = any(
         p["symbol"] == symbol for p in banca_data["posicoes_abertas"].values()
@@ -354,13 +424,16 @@ def processar_vela(banca_data, ativo, symbol, display, timeout_tf, vela, agora):
 
     if bool(vela["entrada_compra"]) and not tem_posicao_aberta:
         pos, pos_id = abrir_posicao(banca_data, display, symbol, "COMPRA", candle_close,
-                                    float(vela["stop_compra"]), float(vela["alvo_compra"]))
+                                    float(vela["stop_compra"]), float(vela["alvo_compra"]),
+                                    entrada_tempo=tempo_entrada)
         if pos:
             msg = (
                 f"🔔 NOVA COMPRA - {display}\n"
                 f"{'='*30}\n"
                 f"Entrada: {candle_close:.6f}\n"
-                f"Regra: segura ate o sinal virar para VENDA\n"
+                f"Stop: {pos['stop']:.6f}\n"
+                f"Alvo: {pos['alvo']:.6f}\n"
+                f"Regra: saida no stop (4%) ou TP (R:R 1:3)\n"
                 f"{'='*30}\n"
                 f"💰 Tamanho: {pos['tamanho_usd']:.2f} USDT\n"
                 f"{'='*30}"
@@ -370,13 +443,16 @@ def processar_vela(banca_data, ativo, symbol, display, timeout_tf, vela, agora):
 
     elif bool(vela["entrada_venda"]) and not tem_posicao_aberta:
         pos, pos_id = abrir_posicao(banca_data, display, symbol, "VENDA", candle_close,
-                                    float(vela["stop_venda"]), float(vela["alvo_venda"]))
+                                    float(vela["stop_venda"]), float(vela["alvo_venda"]),
+                                    entrada_tempo=tempo_entrada)
         if pos:
             msg = (
                 f"🔔 NOVA VENDA - {display}\n"
                 f"{'='*30}\n"
                 f"Entrada: {candle_close:.6f}\n"
-                f"Regra: segura ate o sinal virar para COMPRA\n"
+                f"Stop: {pos['stop']:.6f}\n"
+                f"Alvo: {pos['alvo']:.6f}\n"
+                f"Regra: saida no stop (4%) ou TP (R:R 1:3)\n"
                 f"{'='*30}\n"
                 f"💰 Tamanho: {pos['tamanho_usd']:.2f} USDT\n"
                 f"{'='*30}"
@@ -402,7 +478,7 @@ def monitor_loop():
             f"💰 Banca: {banca_data['banca']:.2f} USDT\n"
             f"🔧 Alavancagem: {ALAVANCAGEM}x\n"
             f"📊 Risco/trade: {RISCO_POR_TRADE*100:.0f}% da banca\n"
-            f"🔄 Entrada: sinal COMPRA/VENDA | Saida: so quando o sinal virar\n"
+            f"🔄 Entrada: sinal AMB COMPRA/VENDA | Saida: stop {STOP_PCT*100:.0f}% ou TP R:R 1:{TP_RR:.0f}\n"
             f"🔒 Persistencia: {'GitHub ON' if PERSIST_DISPONIVEL else 'local'}\n"
             f"{'='*30}\n"
             f"Monitorando:\n"
