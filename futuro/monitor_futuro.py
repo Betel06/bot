@@ -48,15 +48,22 @@ logging.getLogger().addHandler(_bufh)
 from tvDatafeed import TvDatafeed, Interval
 
 # ===================== CONFIGURACOES (igual ao Pine) =====================
+# COLLECT nas 3 temporalidades que tem sinal no TradingView (1m/5m/15m).
+# Cada ativo+timeframe vira uma chave propria (posicao/timestamps independentes),
+# mas TODOS compartilham a MESMA banca fake.
 ATIVOS = [
+    {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "1m", "display": "COLLECT/USDT (1m)"},
     {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "5m", "display": "COLLECT/USDT (5m)"},
+    {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "15m", "display": "COLLECT/USDT (15m)"},
 ]
 
 # Cada ativo+timeframe vira uma chave propria: posicao e timestamps separados,
-# entao o BTW 5m e o BTW 15m operam em paralelo sem bloquear um ao outro.
+# entao operam em paralelo sem bloquear um ao outro.
 MIGRACAO_CHAVES = {
-    "BINANCE:COLLECTUSDT.P": "BINANCE:COLLECTUSDT.P|3m",
-    "BINANCE:BTWUSDT.P": "BINANCE:BTWUSDT.P|5m",
+    "BINANCE:COLLECTUSDT.P": "BINANCE:COLLECTUSDT.P|1m",
+    "BINANCE:COLLECTUSDT.P|1m": "BINANCE:COLLECTUSDT.P|1m",
+    "BINANCE:COLLECTUSDT.P|5m": "BINANCE:COLLECTUSDT.P|5m",
+    "BINANCE:COLLECTUSDT.P|15m": "BINANCE:COLLECTUSDT.P|15m",
 }
 
 TV_INTERVALS = {
@@ -196,7 +203,11 @@ def carregar_resultados():
 
 def abrir_posicao(banca_data, display, symbol, sinal, entrada, stop=None, alvo=None, entrada_tempo=None):
     # Stop fixo 2.5% (validado no backtest) - ignora a estrutura do swing.
-    tamanho_usd = banca_data["banca"] * RISCO_POR_TRADE * ALAVANCAGEM
+    # COM RISCO RATEADO: com varios bots paralelos na MESMA banca, divide o
+    # orcamento de risco pelo numero de posicoes ativas (evita overleverage).
+    n_pos = len(banca_data["posicoes_abertas"]) + 1  # inclui esta nova
+    fator = 1.0 / max(1, n_pos)
+    tamanho_usd = banca_data["banca"] * RISCO_POR_TRADE * ALAVANCAGEM * fator
     risco_usd = 0.0
     lucro_pot = 0.0
 
