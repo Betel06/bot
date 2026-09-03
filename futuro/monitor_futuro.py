@@ -76,9 +76,11 @@ CHECK_INTERVAL_SECONDS = 15
 BANCO_INICIAL = 100.0
 ALAVANCAGEM = 2.0
 RISCO_POR_TRADE = 0.02
-STOP_PCT = 0.04  # stop fixo de protecao por trade (4%, validado no backtest)
+STOP_PCT = 0.025  # stop fixo de protecao por trade (2.5%, validado no backtest)
 TP_RR = 3.0  # take profit em R:R 1:3 (validado no backtest)
 MAX_HOLD_CANDLES = 96  # max 8h (96 velas 5m) numa posicao; depois fecha no mercado
+MAX_REENTRADAS = 2  # max de tentativas (entrada + reentradas) apos stops na mesma tendencia
+BLOQUEIO_DIR_STOPS = 3  # apos N stops seguidos na MESMA direcao, bloqueia novas entradas nela
 # ========================================================================
 
 ESTADO = {
@@ -128,6 +130,7 @@ def _banca_padrao():
         "posicoes_abertas": {},
         "historico": [],
         "ultimos_timestamps": {},
+        "estado_estrategia": {},
     }
 
 
@@ -137,7 +140,7 @@ def _merge_banca(origem, padrao):
         for k in ["banca", "banca_inicial", "alavancagem", "wins", "losses", "total_lucro"]:
             if k in origem:
                 dados[k] = origem[k]
-        for k in ["posicoes_abertas", "historico", "ultimos_timestamps"]:
+        for k in ["posicoes_abertas", "historico", "ultimos_timestamps", "estado_estrategia"]:
             if isinstance(origem.get(k), (dict, list)):
                 dados[k] = origem[k]
 
@@ -191,28 +194,19 @@ def carregar_resultados():
     return carregar_json(RESULTADOS_FILE, {"wins": 0, "losses": 0, "total_lucro": 0.0, "historico": []})
 
 
-def abrir_posicao(banca_data, display, symbol, sinal, entrada, stop, alvo, entrada_tempo=None):
-    # sem stop fixo: tamanho constante ate a virada do sinal
+def abrir_posicao(banca_data, display, symbol, sinal, entrada, stop=None, alvo=None, entrada_tempo=None):
+    # Stop fixo 2.5% (validado no backtest) - ignora a estrutura do swing.
     tamanho_usd = banca_data["banca"] * RISCO_POR_TRADE * ALAVANCAGEM
     risco_usd = 0.0
     lucro_pot = 0.0
 
     pos_id = f"{symbol}_{int(time.time())}"
-    # stop fixo de protecao (% da entrada). Para compra = preco abaixo, venda = acima.
     if sinal == "COMPRA":
-        stop_fixo = float(entrada) * (1 - STOP_PCT)
-        stop_uso = stop_fixo
-        if isinstance(stop, (int, float)) and stop == stop:  # nao-NaN
-            if float(stop) < float(entrada):  # estrutura valida abaixo
-                stop_uso = float(stop) if float(stop) > stop_fixo else stop_fixo
+        stop_uso = float(entrada) * (1 - STOP_PCT)
         risco = float(entrada) - stop_uso
         alvo_uso = float(entrada) + risco * TP_RR
     else:
-        stop_fixo = float(entrada) * (1 + STOP_PCT)
-        stop_uso = stop_fixo
-        if isinstance(stop, (int, float)) and stop == stop:
-            if float(stop) > float(entrada):  # estrutura valida acima
-                stop_uso = float(stop) if float(stop) < stop_fixo else stop_fixo
+        stop_uso = float(entrada) * (1 + STOP_PCT)
         risco = stop_uso - float(entrada)
         alvo_uso = float(entrada) - risco * TP_RR
 
@@ -229,6 +223,7 @@ def abrir_posicao(banca_data, display, symbol, sinal, entrada, stop, alvo, entra
         "lucro_pot": float(lucro_pot),
         "data_entrada": datetime.now(BRT).strftime("%d/%m %H:%M"),
         "tempo_entrada": entrada_tempo,
+        "atingiu_alvo": False,  # marcado quando o preco toca o alvo 3x1 -> ativa trailing pela banda
     }
     banca_data["posicoes_abertas"][pos_id] = posicao
     salvar_banca(banca_data)
@@ -257,6 +252,30 @@ def fechar_posicao(banca_data, pos_id, motivo, preco_saida):
         banca_data["wins"] += 1
     else:
         banca_data["losses"] += 1
+
+    # Atualiza o estado da estrategia (reentradas/bloqueio de direcao)
+    try:
+        est = _estado_estrat(pos["symbol"], banca_data)
+        if pnl_usd >= 0:
+            # trade vencedor: zera tentativas e stops naquela direcao; libera bloqueio dela
+            est["tentativas_abertas"][sinal] = 0
+            est["stops_dir"][sinal] = 0
+            if est.get("direcao_bloqueada") == sinal:
+                est["direcao_bloqueada"] = None
+                log_bloq = f"🔓 Direcao {sinal} liberada apos WIN"
+                print(log_bloq)
+                logging.info(log_bloq)
+        elif "Stop" in str(motivo):
+            # para o bloqueio contarmos apenas stops que realmente sairam por stop
+            est["stops_dir"][sinal] = est["stops_dir"].get(sinal, 0) + 1
+            if est["stops_dir"][sinal] >= BLOQUEIO_DIR_STOPS and est.get("direcao_bloqueada") != sinal:
+                est["direcao_bloqueada"] = sinal
+                log_bloq = (f"🔒 BLoqueio de direcao ativado: {sinal} "
+                            f"({est['stops_dir'][sinal]} stops seguidos) - STOP {STOP_PCT*100:.0f}%")
+                print(log_bloq)
+                logging.info(log_bloq)
+    except Exception:
+        pass
 
     resultado = {
         "par": pos["par"],
@@ -351,13 +370,23 @@ def buscar_candles_tv(symbol, timeframe, limit=100):
     return df
 
 
+def _estado_estrat(symbol, banca_data):
+    """Estado por symbol para reentradas/bloqueio de direcao. Sobrevive a restarts (persistido)."""
+    est = banca_data.setdefault("estado_estrategia", {}).setdefault(symbol, {})
+    est.setdefault("stops_dir", {"COMPRA": 0, "VENDA": 0})
+    est.setdefault("tentativas_abertas", {"COMPRA": 0, "VENDA": 0})
+    est.setdefault("direcao_bloqueada", None)
+    est.setdefault("ult_direcao", None)
+    return est
+
+
 def checar_fechamentos(banca_data, symbol, df, novo_index):
-    """Fecha posicoes deste symbol:
-      - por stop fixo (4%) se o preco tocar o stop;
-      - por take profit no alvo (R:R 1:3);
-      - por tempo maximo (MAX_HOLD_CANDLES) para nao prender capital.
-    Somente avalia velas posteriores a 'tempo_entrada' da posicao (evita
-    fechamento retrogrado), e somente velas ja fechadas (range até novo_index)."""
+    """Fecha posicoes deste symbol conforme a estrategia validada:
+      1) stop fixo 2.5%;
+      2) apos atingir o alvo 3x1, ATIVA TRAILING pela banda: segura a posicao e
+         sai quando o preco fechar do lado contrario da banda central (amr_line);
+      3) tempo maximo (MAX_HOLD_CANDLES) como rede de seguranca.
+    Somente avalia velas fechadas (range ate novo_index) e posteriores a entrada."""
     msgs = []
     for k in range(novo_index):
         vela = df.iloc[k]
@@ -369,9 +398,13 @@ def checar_fechamentos(banca_data, symbol, df, novo_index):
         except Exception:
             candle_tempo = df.index[k]
 
-        flipped = False
+        try:
+            amr_line = float(vela["amr_line"])
+        except Exception:
+            amr_line = None
+
         for pos_id, pos in list(banca_data["posicoes_abertas"].items()):
-            if pos["symbol"] != symbol:
+            if pos.get("symbol") != symbol:
                 continue
             tempo_ent = pos.get("tempo_entrada")
             if tempo_ent is not None:
@@ -384,32 +417,45 @@ def checar_fechamentos(banca_data, symbol, df, novo_index):
             alvo_preco = pos.get("alvo")
             motivo = None
             preco_saida = None
+            sinal = pos["sinal"]
 
-            # 1) stop fixo de protecao
-            if stop_preco is not None and stop_preco == stop_preco:
-                if pos["sinal"] == "COMPRA" and candle_low <= stop_preco:
-                    motivo, preco_saida = "Stop (4%)", stop_preco
-                elif pos["sinal"] == "VENDA" and candle_high >= stop_preco:
-                    motivo, preco_saida = "Stop (4%)", stop_preco
+            # --- TRAILING pela banda: ativo apos tocar o alvo 3x1 ---
+            if pos.get("atingiu_alvo") and amr_line is not None:
+                fechou_contra = (sinal == "COMPRA" and candle_close < amr_line) or \
+                                (sinal == "VENDA" and candle_close > amr_line)
+                if fechou_contra:
+                    motivo = "Trailing (banda)"
+                    preco_saida = candle_close
+            else:
+                # 1) stop fixo 2.5%
+                if stop_preco is not None and stop_preco == stop_preco:
+                    if sinal == "COMPRA" and candle_low <= stop_preco:
+                        motivo, preco_saida = f"Stop ({STOP_PCT*100:.0f}%)", stop_preco
+                    elif sinal == "VENDA" and candle_high >= stop_preco:
+                        motivo, preco_saida = f"Stop ({STOP_PCT*100:.0f}%)", stop_preco
 
-            # 2) take profit no alvo (R:R 1:3)
-            if motivo is None and alvo_preco is not None and alvo_preco == alvo_preco:
-                if pos["sinal"] == "COMPRA" and candle_high >= alvo_preco:
-                    motivo, preco_saida = "Take Profit (1:3)", alvo_preco
-                elif pos["sinal"] == "VENDA" and candle_low <= alvo_preco:
-                    motivo, preco_saida = "Take Profit (1:3)", alvo_preco
+                # 2) tocar o alvo: NAO fecha, marca para iniciar trailing pela banda
+                if motivo is None and alvo_preco is not None and alvo_preco == alvo_preco:
+                    if sinal == "COMPRA" and candle_high >= alvo_preco:
+                        pos["atingiu_alvo"] = True
+                        salvar_banca(banca_data)
+                        continue
+                    elif sinal == "VENDA" and candle_low <= alvo_preco:
+                        pos["atingiu_alvo"] = True
+                        salvar_banca(banca_data)
+                        continue
 
-            # 3) tempo maximo de permanencia
-            if motivo is None and tempo_ent is not None:
-                try:
-                    vela_i = pd.to_datetime(candle_tempo)
-                    ent_i = pd.to_datetime(tempo_ent)
-                    horas_hold = (vela_i - ent_i).total_seconds() / 3600.0
-                    if horas_hold >= MAX_HOLD_CANDLES * 5 / 60.0:
-                        motivo = f"Tempo Max ({MAX_HOLD_CANDLES} velas)"
-                        preco_saida = candle_close
-                except Exception:
-                    pass
+                # 3) tempo maximo de permanencia (rede de seguranca)
+                if motivo is None and tempo_ent is not None and not pos.get("atingiu_alvo"):
+                    try:
+                        vela_i = pd.to_datetime(candle_tempo)
+                        ent_i = pd.to_datetime(tempo_ent)
+                        horas_hold = (vela_i - ent_i).total_seconds() / 3600.0
+                        if horas_hold >= MAX_HOLD_CANDLES * 5 / 60.0:
+                            motivo = f"Tempo Max ({MAX_HOLD_CANDLES} velas)"
+                            preco_saida = candle_close
+                    except Exception:
+                        pass
 
             if motivo:
                 msg = fechar_posicao(banca_data, pos_id, motivo, preco_saida)
@@ -419,10 +465,11 @@ def checar_fechamentos(banca_data, symbol, df, novo_index):
 
 
 def processar_vela(banca_data, ativo, symbol, display, timeout_tf, vela, agora):
-    """Abre posicao se a vela tiver sinal. Retorna lista de mensagens."""
+    """Abre posicao se a vela tiver sinal, com as travas validadas:
+      - filtro MACD de concordancia;
+      - bloqueio de direcao apos BLOQUEIO_DIR_STOPS stops seguidos na mesma direcao;
+      - reentrada limitada a MAX_REENTRADAS na mesma direcao apos stops."""
     msgs = []
-    candle_low = float(vela["low"])
-    candle_high = float(vela["high"])
     candle_close = float(vela["close"])
     tempo_entrada = None
     try:
@@ -430,9 +477,16 @@ def processar_vela(banca_data, ativo, symbol, display, timeout_tf, vela, agora):
     except Exception:
         pass
 
+    est = _estado_estrat(symbol, banca_data)
     tem_posicao_aberta = any(
         p["symbol"] == symbol for p in banca_data["posicoes_abertas"].values()
     )
+
+    # direcao da tendencia atual (is_bull) para suportar REENTRADA na mesma tendencia apos stop
+    try:
+        tendencia_bull = bool(vela["is_bull"])
+    except Exception:
+        tendencia_bull = None
 
     def macd_permite(sinal):
         """Filtro de concordancia: COMPRA so com MACD hist>0, VENDA so com <0.
@@ -446,47 +500,79 @@ def processar_vela(banca_data, ativo, symbol, display, timeout_tf, vela, agora):
         else:
             return mh < 0.0
 
-    if bool(vela["entrada_compra"]) and not tem_posicao_aberta and macd_permite("COMPRA"):
+    def pode_abrir(sinal):
+        """Aplica bloqueio de direcao e limite de reentradas na mesma direcao."""
+        if tem_posicao_aberta:
+            return False
+        if est.get("direcao_bloqueada") == sinal:
+            return False
+        if est.get("ult_direcao") and est["ult_direcao"] != sinal:
+            est["tentativas_abertas"]["COMPRA"] = 0
+            est["tentativas_abertas"]["VENDA"] = 0
+            # direcao mudou: libera qualquer bloqueio (mercado saiu da lateralizacao)
+            est["direcao_bloqueada"] = None
+        est["ult_direcao"] = sinal
+        return est["tentativas_abertas"][sinal] <= MAX_REENTRADAS
+
+    aberto = False
+    abrindo = None
+
+    # entrada por virada de sinal (sinal_compra/sinal_venda)
+    if bool(vela["entrada_compra"]) and pode_abrir("COMPRA") and macd_permite("COMPRA"):
+        abrindo = "COMPRA"
+    elif bool(vela["entrada_venda"]) and pode_abrir("VENDA") and macd_permite("VENDA"):
+        abrindo = "VENDA"
+
+    # REENTRADA na mesma tendencia apos stop: sem posicao e is_bull sinaliza direcao,
+    # reabre limitado a MAX_REENTRADAS (desde que ainda haja tentativas restantes e
+    # a direcao nao esteja bloqueada). Evita reabrir em toda vela (so quando resolve
+    # uma cadeia ainda ativa: ja tomou stop ou mudou de direcao).
+    if abrindo is None and not tem_posicao_aberta and tendencia_bull is not None:
+        dir_tend = "COMPRA" if tendencia_bull else "VENDA"
+        if pode_abrir(dir_tend):
+            ja_tomou_stop = est["stops_dir"].get(dir_tend, 0) > 0
+            ainda_tentando = est["tentativas_abertas"][dir_tend] <= MAX_REENTRADAS
+            if ja_tomou_stop and ainda_tentando and macd_permite(dir_tend):
+                abrindo = dir_tend
+
+    if abrindo == "COMPRA":
         pos, pos_id = abrir_posicao(banca_data, display, symbol, "COMPRA", candle_close,
-                                    float(vela["stop_compra"]), float(vela["alvo_compra"]),
                                     entrada_tempo=tempo_entrada)
         if pos:
-            msg = (
-                f"🔔 NOVA COMPRA - {display}\n"
-                f"{'='*30}\n"
-                f"Entrada: {candle_close:.6f}\n"
-                f"Stop: {pos['stop']:.6f}\n"
-                f"Alvo: {pos['alvo']:.6f}\n"
-                f"Regra: saida no stop (4%) ou TP (R:R 1:3)\n"
-                f"{'='*30}\n"
-                f"💰 Tamanho: {pos['tamanho_usd']:.2f} USDT\n"
-                f"{'='*30}"
-            )
-            msgs.append(msg)
+            est["tentativas_abertas"]["COMPRA"] += 1
+            was_flip = bool(vela["entrada_compra"])
+            msgs.append(_msg_abertura("COMPRA", display, pos, reentrada=not was_flip))
             ESTADO["sinais_gerados"] += 1
-
-    elif bool(vela["entrada_venda"]) and not tem_posicao_aberta and macd_permite("VENDA"):
+            aberto = True
+    elif abrindo == "VENDA":
         pos, pos_id = abrir_posicao(banca_data, display, symbol, "VENDA", candle_close,
-                                    float(vela["stop_venda"]), float(vela["alvo_venda"]),
                                     entrada_tempo=tempo_entrada)
         if pos:
-            msg = (
-                f"🔔 NOVA VENDA - {display}\n"
-                f"{'='*30}\n"
-                f"Entrada: {candle_close:.6f}\n"
-                f"Stop: {pos['stop']:.6f}\n"
-                f"Alvo: {pos['alvo']:.6f}\n"
-                f"Regra: saida no stop (4%) ou TP (R:R 1:3)\n"
-                f"{'='*30}\n"
-                f"💰 Tamanho: {pos['tamanho_usd']:.2f} USDT\n"
-                f"{'='*30}"
-            )
-            msgs.append(msg)
+            est["tentativas_abertas"]["VENDA"] += 1
+            was_flip = bool(vela["entrada_venda"])
+            msgs.append(_msg_abertura("VENDA", display, pos, reentrada=not was_flip))
             ESTADO["sinais_gerados"] += 1
+            aberto = True
 
+    salvar_banca(banca_data)
     if not msgs:
         logging.info(f"[{display} {timeout_tf}] Sem sinal - preco: {candle_close:.6f}")
     return msgs
+
+
+def _msg_abertura(sinal, display, pos, reentrada=False):
+    cab = "🔔 NOVA " + sinal if not reentrada else "🔔 REENTRADA " + sinal
+    return (
+        f"{cab} - {display}\n"
+        f"{'='*30}\n"
+        f"Entrada: {pos['entrada']:.6f}\n"
+        f"Stop: {pos['stop']:.6f}\n"
+        f"Alvo: {pos['alvo']:.6f}\n"
+        f"Regra: stop {STOP_PCT*100:.0f}% | TP 1:{TP_RR:.0f} + trailing pela banda\n"
+        f"{'='*30}\n"
+        f"💰 Tamanho: {pos['tamanho_usd']:.2f} USDT\n"
+        f"{'='*30}"
+    )
 
 
 def monitor_loop():
@@ -502,7 +588,7 @@ def monitor_loop():
             f"💰 Banca: {banca_data['banca']:.2f} USDT\n"
             f"🔧 Alavancagem: {ALAVANCAGEM}x\n"
             f"📊 Risco/trade: {RISCO_POR_TRADE*100:.0f}% da banca\n"
-            f"🔄 Entrada: sinal AMB + filtro MACD (concorda) | Saida: stop {STOP_PCT*100:.0f}% ou TP R:R 1:{TP_RR:.0f}\n"
+            f"🔄 Entrada: sinal AMB + filtro MACD (concorda) | Saida: stop {STOP_PCT*100:.0f}% ou TP 1:{TP_RR:.0f} + trailing pela banda | Reentrada x{MAX_REENTRADAS} | Bloqueio dir apos {BLOQUEIO_DIR_STOPS} stops\n"
             f"🔒 Persistencia: {'GitHub ON' if PERSIST_DISPONIVEL else 'local'}\n"
             f"{'='*30}\n"
             f"Monitorando:\n"
@@ -633,8 +719,8 @@ def criar_app():
         return {
             "bot": "futuro_amb",
             "status": "online",
-            "estrategia": "Banda Momentum Adaptativa (AMB v2)",
-            "sinal": "COMPRA so sai quando virar VENDA | VENDA so sai quando virar COMPRA (sem stop fixo)",
+            "estrategia": "Banda Momentum Adaptativa (AMB v2) v2.1",
+            "sinal": f"entrada AMB + MACD | stop {STOP_PCT*100:.0f}% | TP 1:{TP_RR:.0f} + trailing pela banda | reentrada x{MAX_REENTRADAS} | bloqueio dir apos {BLOQUEIO_DIR_STOPS} stops",
             "pivot_len": int(os.environ.get("SMC_PIVOT_LEN", "5")),
             "persistencia": "github" if PERSIST_DISPONIVEL else "local",
             "banca": {
