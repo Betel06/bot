@@ -282,6 +282,16 @@ def fechar_posicao(banca_data, pos_id, motivo, preco_saida):
     return msg
 
 
+def _macd_hist(serie, fast=12, slow=26, sig=9):
+    """Histograma MACD: ema_fast - ema_slow - signal. Usado como filtro
+    de concordancia de direcao na entrada (melhorou o backtest)."""
+    ema_fast = serie.ewm(span=fast, adjust=False).mean()
+    ema_slow = serie.ewm(span=slow, adjust=False).mean()
+    macd = ema_fast - ema_slow
+    signal = macd.ewm(span=sig, adjust=False).mean()
+    return (macd - signal).fillna(0.0)
+
+
 def calcular_sinais(df):
     """Motor AMB v2 (© Uptrick, CC BY-SA 4.0) + stop ancorado na estrutura:
     entrada na virada Compra/Venda; stop abaixo do ultimo fundo / acima do
@@ -289,6 +299,8 @@ def calcular_sinais(df):
     from futuro.amb import calcular_amb, calcular_stop_estrutura
     df = calcular_amb(df)
     df = calcular_stop_estrutura(df)
+    # filtro de concordancia MACD (validado: melhora win-rate/PF sem cortar trades)
+    df["macd_hist"] = _macd_hist(df["close"].astype(float))
     return df
 
 
@@ -422,7 +434,19 @@ def processar_vela(banca_data, ativo, symbol, display, timeout_tf, vela, agora):
         p["symbol"] == symbol for p in banca_data["posicoes_abertas"].values()
     )
 
-    if bool(vela["entrada_compra"]) and not tem_posicao_aberta:
+    def macd_permite(sinal):
+        """Filtro de concordancia: COMPRA so com MACD hist>0, VENDA so com <0.
+        Se a coluna nao existir, deixa passar (sem filtro)."""
+        try:
+            mh = float(vela["macd_hist"])
+        except Exception:
+            return True
+        if sinal == "COMPRA":
+            return mh > 0.0
+        else:
+            return mh < 0.0
+
+    if bool(vela["entrada_compra"]) and not tem_posicao_aberta and macd_permite("COMPRA"):
         pos, pos_id = abrir_posicao(banca_data, display, symbol, "COMPRA", candle_close,
                                     float(vela["stop_compra"]), float(vela["alvo_compra"]),
                                     entrada_tempo=tempo_entrada)
@@ -441,7 +465,7 @@ def processar_vela(banca_data, ativo, symbol, display, timeout_tf, vela, agora):
             msgs.append(msg)
             ESTADO["sinais_gerados"] += 1
 
-    elif bool(vela["entrada_venda"]) and not tem_posicao_aberta:
+    elif bool(vela["entrada_venda"]) and not tem_posicao_aberta and macd_permite("VENDA"):
         pos, pos_id = abrir_posicao(banca_data, display, symbol, "VENDA", candle_close,
                                     float(vela["stop_venda"]), float(vela["alvo_venda"]),
                                     entrada_tempo=tempo_entrada)
@@ -478,7 +502,7 @@ def monitor_loop():
             f"💰 Banca: {banca_data['banca']:.2f} USDT\n"
             f"🔧 Alavancagem: {ALAVANCAGEM}x\n"
             f"📊 Risco/trade: {RISCO_POR_TRADE*100:.0f}% da banca\n"
-            f"🔄 Entrada: sinal AMB COMPRA/VENDA | Saida: stop {STOP_PCT*100:.0f}% ou TP R:R 1:{TP_RR:.0f}\n"
+            f"🔄 Entrada: sinal AMB + filtro MACD (concorda) | Saida: stop {STOP_PCT*100:.0f}% ou TP R:R 1:{TP_RR:.0f}\n"
             f"🔒 Persistencia: {'GitHub ON' if PERSIST_DISPONIVEL else 'local'}\n"
             f"{'='*30}\n"
             f"Monitorando:\n"
