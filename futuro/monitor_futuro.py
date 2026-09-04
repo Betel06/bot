@@ -48,19 +48,15 @@ logging.getLogger().addHandler(_bufh)
 from tvDatafeed import TvDatafeed, Interval
 
 # ===================== CONFIGURACOES (igual ao Pine) =====================
-# COLLECT nas 3 temporalidades que tem sinal no TradingView (1m/5m/15m).
-# Cada ativo+timeframe vira uma chave propria (posicao/timestamps independentes),
-# mas TODOS compartilham a MESMA banca fake.
+# Bot unico: apenas COLLECT/USDT 5m (a temporalidade de referencia do bot).
 ATIVOS = [
-    {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "1m", "display": "COLLECT/USDT (1m)"},
     {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "5m", "display": "COLLECT/USDT (5m)"},
-    {"symbol": "BINANCE:COLLECTUSDT.P", "timeframe": "15m", "display": "COLLECT/USDT (15m)"},
 ]
 
 # Cada ativo+timeframe vira uma chave propria: posicao e timestamps separados,
 # entao operam em paralelo sem bloquear um ao outro.
 MIGRACAO_CHAVES = {
-    "BINANCE:COLLECTUSDT.P": "BINANCE:COLLECTUSDT.P|1m",
+    "BINANCE:COLLECTUSDT.P": "BINANCE:COLLECTUSDT.P|5m",
     "BINANCE:COLLECTUSDT.P|1m": "BINANCE:COLLECTUSDT.P|1m",
     "BINANCE:COLLECTUSDT.P|5m": "BINANCE:COLLECTUSDT.P|5m",
     "BINANCE:COLLECTUSDT.P|15m": "BINANCE:COLLECTUSDT.P|15m",
