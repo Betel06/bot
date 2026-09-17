@@ -37,6 +37,35 @@ def enviar_mensagem(texto, chat_id=None):
     return (ok, "OK") if ok else (False, ultimo_erro or "erro")
 
 
+def enviar_foto(caminho_imagem, caption="", chat_id=None):
+    token, chats = carregar_config()
+    if not token or not chats:
+        return False, "Telegram nao configurado"
+    if not os.path.exists(caminho_imagem):
+        return False, "Imagem nao existe: {}".format(caminho_imagem)
+
+    alvos = [str(chat_id)] if chat_id else chats
+    url = "https://api.telegram.org/bot{}/sendPhoto".format(token)
+    ok = False
+    ultimo_erro = None
+    for cid in alvos:
+        try:
+            with open(caminho_imagem, "rb") as f:
+                resposta = requests.post(
+                    url,
+                    data={"chat_id": cid, "caption": caption},
+                    files={"photo": f},
+                    timeout=20,
+                )
+            if resposta.status_code in (200, 201):
+                ok = True
+            else:
+                ultimo_erro = "Erro {} em {}".format(resposta.status_code, cid)
+        except Exception as e:
+            ultimo_erro = str(e)
+    return (ok, "OK") if ok else (False, ultimo_erro or "erro")
+
+
 def formatar_sinal(sinal):
     if sinal["sinal"] == "COMPRA":
         tag = "LONG 🔼"
