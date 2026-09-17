@@ -27,8 +27,8 @@ os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(IMG_DIR, exist_ok=True)
 
 # ---------------- CONFIG --------------------
-MOEDAS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "LINKUSDT", "ADAUSDT",
-          "BNBUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT"]
+MOEDAS = ["BTCUSDT", "COLLECTUSDT", "BTWUSDT", "UAIUSDT", "HEMIUSDT", "STABLEUSDT",
+          "1000PEPEUSDT", "ZAMAUSDT", "ZECUSDT", "SOLUSDT", "NEARUSDT", "BABYUSDT"]
 INTERVALO = "4h"
 LOOP_SEG = int(os.environ.get("SACA_LOOP_SEG", "300"))
 BANCA_INICIAL = float(os.environ.get("SACA_BANCA_INICIAL", "50"))
@@ -49,7 +49,7 @@ HORAS_POR_VELA = 4      # candles 4H
 
 # ---------------- FETCH BINANCE -------------
 def fetch_klines(symbol, intervalo, start_ms=None, limit=1000):
-    url = "https://api.binance.com/api/v3/klines"
+    url = "https://fapi.binance.com/fapi/v1/klines"
     params = {"symbol": symbol, "interval": intervalo, "limit": limit}
     if start_ms:
         params["startTime"] = int(start_ms)
