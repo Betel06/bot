@@ -405,5 +405,65 @@ def monitorar():
             time.sleep(LOOP_SEG)
 
 
+# ---------------- SERVIDOR WEB (health/status/debug p/ Render) -------------
+def web_server():
+    try:
+        from flask import Flask, jsonify
+    except Exception:
+        return
+    app = Flask(__name__)
+
+    @app.route("/")
+    def hello():
+        return "Saca-Liquidez 4H"
+
+    @app.route("/health")
+    def health():
+        return "ok"
+
+    @app.route("/status")
+    def status():
+        try:
+            b = carregar_banca()
+            trades = b.get("trades", [])
+            wins = sum(1 for t in trades if t.get("resultado") == "WIN")
+            losses = sum(1 for t in trades if t.get("resultado") == "LOSS")
+            pl = sum(t.get("pl_liquido", 0) for t in trades)
+            n = len(trades)
+            return jsonify({
+                "banca": round(float(b.get("banca", BANCA_INICIAL)), 2),
+                "n_trades": n,
+                "wins": wins,
+                "losses": losses,
+                "pl_liquido": round(pl, 2),
+                "win_rate": round(100.0 * wins / n, 1) if n else 0,
+                "estrategia": "Saca-Liquidez 4H (retest+mercado)",
+                "ultimo_sinal": b.get("ultimo_sinal", {}),
+            })
+        except Exception as e:
+            return jsonify({"erro": str(e)}), 500
+
+    @app.route("/debug")
+    def debug():
+        try:
+            logs = []
+            if os.path.exists(LOG_FILE):
+                with open(LOG_FILE, "r") as f:
+                    b = json.load(f)
+                trades = b.get("trades", [])
+                logs = [t.get("data_sinal", "") + " " + t.get("moeda", "") + " " +
+                        t.get("lado", "") + " " + str(t.get("resultado", "")) for t in trades[-20:]]
+            return jsonify({"banca": carregar_banca().get("banca"), "trades_recentes": logs})
+        except Exception as e:
+            return jsonify({"erro": str(e)}), 500
+
+    port = int(os.environ.get("PORT", "10000"))
+    try:
+        app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    except Exception as e:
+        print("[web] servidor falhou: {}".format(e))
+
+
 if __name__ == "__main__":
+    threading.Thread(target=web_server, daemon=True).start()
     monitorar()
