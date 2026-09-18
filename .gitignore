@@ -4,6 +4,9 @@ logs/
 *.log
 spot/telegram_config.txt
 .github/
+*.env
+credentials.env
+browser_session.json
 
 # estado sincronizado via API (nao versionar)
 /estado.json
