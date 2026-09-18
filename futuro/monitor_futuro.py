@@ -42,6 +42,10 @@ TIME_EXIT = int(os.environ.get("SACA_TIME_EXIT", "16"))  # velas apos entrada
 MAXR = 0.05  # distancia do stop maxima (5%)
 NOTIONAL_BASE = 100.0  # posicao base com stop de 1%
 
+# Sinais ao vivo p/ o Sinal Trader local (app Sinal Trader -> relay via /signals)
+SINAIS_LIVE = []
+SINAIS_LIVE_LOCK = threading.Lock()
+
 # ---------------- CUSTOS REAIS DE FUTUROS ----------------
 # Binance futuros USDT: taker 0.05% / maker 0.02% (VIP0), slippage estimado, funding ~0.01%/8h
 TAKER_FEE = 0.0005      # entrada/saida a mercado
@@ -346,6 +350,15 @@ def monitorar():
                 lev, notional, dist = calc_alavancagem(entry, stop)
                 alvo = entry - ALVO_R * abs(entry - stop) if side == "S" else entry + ALVO_R * abs(entry - stop)
 
+                with SINAIS_LIVE_LOCK:
+                    SINAIS_LIVE.append({
+                        "t": time.time(), "ts_sinal": T[idx_entry], "symbol": symbol,
+                        "side": side, "entry": entry, "stop": stop,
+                        "alvo": alvo, "modo": modo,
+                    })
+                    agora = time.time()
+                    SINAIS_LIVE[:] = [r for r in SINAIS_LIVE if r["t"] > agora - 259200][-300:]
+
                 print("[{}] SINAL {} ent={:.6g} stop={:.6g} [{}] lev={:.2f}x notional=${:.2f}".format(
                     symbol, side, entry, stop, modo, lev, notional))
 
@@ -444,6 +457,15 @@ def web_server():
                 "estrategia": "Saca-Liquidez 4H (retest+mercado)",
                 "ultimo_sinal": b.get("ultimo_sinal", {}),
             })
+        except Exception as e:
+            return jsonify({"erro": str(e)}), 500
+
+    @app.route("/signals")
+    def signals():
+        try:
+            with SINAIS_LIVE_LOCK:
+                out = list(SINAIS_LIVE[-200:])
+            return jsonify(out)
         except Exception as e:
             return jsonify({"erro": str(e)}), 500
 
