@@ -1,8 +1,8 @@
-# futuro/monitor_futuro.py (MODO ESTUDO - BANCA FAKE $50 - SACA-LIQUIDEZ 4H HIBRIDO)
+# futuro/monitor_futuro.py (MODO ESTUDO - BANCA FAKE $50 - SACA-LIQUIDEZ 4H DANIEL)
 #
 # Estrategia: Sweep 4H + CHoCH (validada em backtest)
 # - Referencia: pavio da ultima vela 4H FECHADA
-# - HIBRIDO: entra no RETEST do pavio (ordem limite, custo maker + sem slippage)
+# - DANIEL: entra no RETEST do pavio (ordem limite, custo maker + sem slippage)
 #   ate 4 velas apos o CHoCH; se nao voltar, entra a MERCADO no open do CHoCH (V1).
 #   Backtest: +572 (bear) / +638 (bull) vs V1 puro, fracassa no flip, passa MC e
 #   custos pessimistas (ramo "mercado" = V1 original como fallback).
@@ -37,9 +37,9 @@ INTERVALO = "4h"
 LOOP_SEG = int(os.environ.get("SACA_LOOP_SEG", "300"))
 BANCA_INICIAL = float(os.environ.get("SACA_BANCA_INICIAL", "50"))
 RISCO_USD = float(os.environ.get("SACA_RISCO", "1"))
-ALVO_R = float(os.environ.get("SACA_ALVO_R", "3"))
-TIME_EXIT = int(os.environ.get("SACA_TIME_EXIT", "8"))  # velas apos entrada
-MAXR = 0.03  # distancia do stop maxima (3%)
+ALVO_R = float(os.environ.get("SACA_ALVO_R", "5"))
+TIME_EXIT = int(os.environ.get("SACA_TIME_EXIT", "16"))  # velas apos entrada
+MAXR = 0.05  # distancia do stop maxima (5%)
 NOTIONAL_BASE = 100.0  # posicao base com stop de 1%
 
 # ---------------- CUSTOS REAIS DE FUTUROS ----------------
@@ -114,7 +114,7 @@ RETRASO_RETEST = 4  # velas 4H de janela para o retest preencher
 
 
 def decidir_entrada(sinal, O, H, L, C):
-    """HIBRIDO: se o preco VOLTAR ao pavio dentro de RETRASO_RETEST velas apos o CHoCH,
+    """DANIEL: se o preco VOLTAR ao pavio dentro de RETRASO_RETEST velas apos o CHoCH,
     entra LIMITE no pavio (maker, sem slippage). Caso contrario, entra a MERCADO no
     open do CHoCH (taker, = V1 original como fallback). Retorna
     (entry, stop, idx_start, modo) com modo em {'limite','mercado'}."""
@@ -340,7 +340,7 @@ def monitorar():
                 if ultimo.get(symbol) == chave:
                     continue
 
-                # HIBRIDO: tenta retest do pavio (maker); fallback = mercado (V1)
+                # DANIEL: tenta retest do pavio (maker); fallback = mercado (V1)
                 entry, stop, idx_start, modo = decidir_entrada(sinal, O, H, L, C)
 
                 lev, notional, dist = calc_alavancagem(entry, stop)
