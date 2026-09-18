@@ -1,0 +1,73 @@
+//@version=5
+indicator("SMC Est", overlay=true)
+
+pivotLen = input.int(10, "Pivos", minval=1)
+pctMinimo = input.float(0.5, "Variação mínima (%)", minval=0.1, step=0.1)
+corpoMinimo = input.float(60, "Corpo mínimo (%)", minval=10, maxval=95, step=5)
+
+swingHigh = ta.pivothigh(high, pivotLen, pivotLen)
+swingLow = ta.pivotlow(low, pivotLen, pivotLen)
+
+var float ultimoTopo = na
+var float ultimoFundo = na
+var string tendencia = "indefinida"
+var int ultimoTopoBar = na
+var int ultimoFundoBar = na
+var line linhaInvalidacao = na
+
+pctMove(a, b) => math.abs(a - b) / b * 100
+
+corpo = math.abs(close - open)
+totalCandle = high - low
+pctCorpo = totalCandle > 0 ? corpo / totalCandle * 100 : 0.0
+corpoValido = pctCorpo >= corpoMinimo
+
+if not na(swingHigh)
+    topoValido = na(ultimoTopo) ? true : pctMove(swingHigh, ultimoTopo) >= pctMinimo
+    if topoValido
+        barTopo = bar_index - pivotLen
+        if not na(ultimoTopo)
+            if swingHigh > ultimoTopo
+                label.new(barTopo, swingHigh, "HH", style=label.style_label_down, color=color.new(color.green, 0), textcolor=color.white, size=size.small)
+            else
+                label.new(barTopo, swingHigh, "LH", style=label.style_label_down, color=color.new(color.red, 0), textcolor=color.white, size=size.small)
+        ultimoTopo := swingHigh
+        ultimoTopoBar := barTopo
+
+if not na(swingLow)
+    fundoValido = na(ultimoFundo) ? true : pctMove(swingLow, ultimoFundo) >= pctMinimo
+    if fundoValido
+        barFundo = bar_index - pivotLen
+        if not na(ultimoFundo)
+            if swingLow > ultimoFundo
+                label.new(barFundo, swingLow, "HL", style=label.style_label_up, color=color.new(color.green, 0), textcolor=color.white, size=size.small)
+            else
+                label.new(barFundo, swingLow, "LL", style=label.style_label_up, color=color.new(color.red, 0), textcolor=color.white, size=size.small)
+        ultimoFundo := swingLow
+        ultimoFundoBar := barFundo
+
+brokeUp = not na(ultimoTopo) and ta.crossover(close, ultimoTopo) and corpoValido and close > open
+brokeDown = not na(ultimoFundo) and ta.crossunder(close, ultimoFundo) and corpoValido and close < open
+
+if brokeUp
+    if tendencia != "alta"
+        label.new(bar_index, high, "CHoCH", style=label.style_label_down, color=color.new(color.lime, 0), textcolor=color.black, size=size.normal)
+        tendencia := "alta"
+    else
+        label.new(bar_index, high, "BOS", style=label.style_label_down, color=color.new(color.green, 0), textcolor=color.white, size=size.normal)
+
+if brokeDown
+    if tendencia != "baixa"
+        label.new(bar_index, low, "CHoCH", style=label.style_label_up, color=color.new(color.orange, 0), textcolor=color.black, size=size.normal)
+        tendencia := "baixa"
+    else
+        label.new(bar_index, low, "BOS", style=label.style_label_up, color=color.new(color.red, 0), textcolor=color.white, size=size.normal)
+
+if not na(linhaInvalidacao)
+    line.delete(linhaInvalidacao)
+
+if tendencia == "alta" and not na(ultimoFundo)
+    linhaInvalidacao := line.new(ultimoFundoBar, ultimoFundo, bar_index, ultimoFundo, color=color.orange, width=2, extend=extend.right, style=line.style_dashed)
+
+if tendencia == "baixa" and not na(ultimoTopo)
+    linhaInvalidacao := line.new(ultimoTopoBar, ultimoTopo, bar_index, ultimoTopo, color=color.orange, width=2, extend=extend.right, style=line.style_dashed)

@@ -1,0 +1,223 @@
+UNORDINARY
+ROYAL PALADIN
+LV 48
+TAXA DE EXP
++2%
+0
++
+143.657
+Loja
+13286
+jogadores online
+Personagem
+Caçar
+Prey
+Amigos
+Guild
+Wiki
+Ranking
+Discord
+Convidar
+Opções
+Distance Fighting
+1% · próximo em ~22m
+Cancelar
+Loading…
+ENTERING WORLD
+17%
+DEPOT
+VENDA RÁPIDA
+IMBUEMENTS
+BLESSINGS
+570/570
+440/445
+Lv 48
+55.9%
+8:54h
++
+160
+50
+56
+Grátis
+35
+25
+210
+160
+70
++
++
+60
++
+55
+20
+25
++
++
++
++
+CONJUNTO
+Default
+──────────
+Salvar como novo conjunto…
+Limpar a barra…
+ALVO
+Mais próximo
+Menor vida
+Maior vida
+Menor % de vida
+Maior % de vida
+🛡
+⚖
+⚔
+−
++
+Chat
+⛶
+Global
+Local
+Sistema
+Combate
+
+03:07 Dom Quixote[70 RP]: busco pt vamp 8x
+
+Enviar
+CYCLOPEDIA
+Os registros do jogo
+×
+NOVIDADES
+ITENS
+BESTIARY
+BOSSTIARY
+20 DE AGO. DE 2026
+MAIS RECENTE
+Grimvale abre, todo mundo despacha loot, e o progresso salva sozinho
+19 DE AGO. DE 2026
+Três caçadas novas em Yalahar, e o magic shield na barra de mana
+18 DE AGO. DE 2026
+Uma action bar mais clara e uma loja de coins maior
+17 DE AGO. DE 2026
+Três caçadas novas, a lista da party e as expedições de guilda
+
+4 atualizações
+
+20 DE AGOSTO DE 2026
+MAIS RECENTE
+GRIMVALE ABRE, TODO MUNDO DESPACHA LOOT, E O PROGRESSO SALVA SOZINHO
+◆
+NOVAS CAÇADAS
+NOVO
+
+Nova caçada — Grimvale Warrens: os túneis dos werebadgers.
+
+NOVO
+
+Nova caçada — Grimvale Dens: wereboars e werebears, mais fundo na mesma caverna.
+
+NOVO
+
+Os licantropos entraram no bestiário como uma classe própria.
+
+DISPATCH DE LOOT
+NOVO
+
+Toda conta agora pode despachar loot no meio da caçada — um mensageiro vende o loot marcado na loja da cidade e o gold chega na hora, enquanto a caçada continua. Uma vez por hora na conta free, a cada 30 minutos com premium.
+
+COMBATE
+CORREÇÃO
+
+A regeneração de vida e mana agora é por vocação — cada vocação regenera mais do que é a cara dela — e a promoção no nível 20 é o que libera a taxa cheia.
+
+CORREÇÃO
+
+Chegou a great spirit potion — a poção do paladin nível 80, que recupera vida e mana no mesmo gole.
+
+CORREÇÃO
+
+Um personagem caçando com runas ou magias de área não abandona mais um alvo que os hits estão acertando.
+
+ACTION BAR
+NOVO
+
+Shift+clique num slot desliga a regra — e religa — sem abrir o editor.
+
+NOVO
+
+O menu de presets ganhou a opção Limpar a barra: um clique confirmado esvazia todos os slots do set atual.
+
+MERCADO
+MUDANÇA
+
+Uma oferta de Huntera Coins não pode mais cruzar o livro, uma venda abaixo da melhor compra é recusada em vez de executada no preço errado.
+
+MUDANÇA
+
+Toda oferta e compra de coins repete os números e pede confirmação, e a compra começa em 1 coin em vez do lote inteiro.
+
+CORREÇÃO
+
+Anéis e amuletos voltaram a poder ser vendidos no leilão — uma cópia nova estava sendo tratada como usada.
+
+GUILDAS
+MELHORIA
+
+A lista da guild agora ordena por contribuição — líder, vices, e depois quem mais contribuiu — e parou de embaralhar quando alguém loga.
+
+CORREÇÃO
+
+A expedição só pede criaturas que existem em alguma caçada.
+
+CORREÇÃO
+
+Entrar no mundo de um amigo parou de recusar quando havia espaço, e um convite recusado pode ser tentado de novo em vez de sumir junto com a resposta.
+
+CHAT
+NOVO
+
+Uma aba System guarda os avisos que somem do topo da tela — level up, skill e anúncios podem ser lidos depois que o banner sumiu.
+
+NOVO
+
+[Huntera - Infos] fala no chat global de tempos em tempos — avisos fixos da casa, em rodízio. Nenhum jogador pode usar esse nome.
+
+INTERFACE
+MELHORIA
+
+A seleção de personagens virou páginas, com busca por nome, filtro de vocação e ordenação.
+
+CORREÇÃO
+
+A aba de Arena parou de voltar para o topo da lista durante o combate.
+
+SALVAMENTO E MUNDOS
+MELHORIA
+
+Corrigido um problema com o salvamento de algumas contas durante server saves.
+
+MUDANÇA
+
+O depot ganhou um limite: 1.000 tipos de itens diferentes, com um contador exibido a partir de 80%. Nada que já está guardado é removido.
+
+CORREÇÃO
+
+Uma multidão logando ao mesmo tempo se espalha entre os mundos em vez de encher um só.
+
+Última atualização: 20 de agosto de 2026
+Fechar
+Inventário
+×
+100
+6
+Capacidade
+1728.07 oz
+Bolsa
+?
+Mochila
+100
+143.657
+Server Save e Aplicação de Patches
+
+Seja bem vindo ao Huntera!
+
+Server save todo dia às 12:00 PM (meio dia).
+
+Fechar

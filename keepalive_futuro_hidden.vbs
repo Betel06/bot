@@ -1,0 +1,1 @@
+CreateObject("WScript.Shell").Run "cmd /c ""C:\Users\danie\Documents\BOT\keepalive_futuro.cmd""", 0, False

@@ -1,0 +1,132 @@
+//@version=5
+indicator("Bot 3x1 (BB+R:R+SMC)", overlay=true)
+
+len = input.int(20, "Periodo BB", minval=2)
+dev = input.float(2.0, "Desvio BB", minval=0.1, step=0.1)
+vm = input.float(1.2, "Volume x media", minval=0.1, step=0.1)
+vlen = input.int(20, "Periodo volume", minval=1)
+pp = input.int(10, "Pivos SMC (igual bot)", minval=1)
+rr = input.float(3.0, "Alvo (x do stop)", minval=0.5, step=0.5)
+
+basis = ta.sma(close, len)
+sd = ta.stdev(close, len)
+upperBand = basis + dev * sd
+lowerBand = basis - dev * sd
+
+plot(basis, "Base", color=color.new(color.white, 0), linewidth=1)
+plot(upperBand, "Sup", color=color.new(color.blue, 0), linewidth=1)
+plot(lowerBand, "Inf", color=color.new(color.blue, 0), linewidth=1)
+
+vMed = ta.sma(volume, vlen)
+volOk = volume >= vMed * vm
+
+shP = ta.pivothigh(high, pp, pp)
+slP = ta.pivotlow(low, pp, pp)
+var float ultTopo = na
+var float ultFundo = na
+var string tend = "indefinida"
+if not na(shP)
+    ultTopo := shP
+if not na(slP)
+    ultFundo := slP
+cima = ta.crossover(close, ultTopo)
+baixo = ta.crossunder(close, ultFundo)
+if cima
+    tend := "alta"
+if baixo
+    tend := "baixa"
+
+compra = close <= lowerBand and volOk and tend == "alta"
+venda = close >= upperBand and volOk and tend == "baixa"
+compraRaw = close <= lowerBand and volOk
+vendaRaw = close >= upperBand and volOk
+
+plotshape(compra, "Compra", style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 0), size=size.small, text="C")
+plotshape(venda, "Venda", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small, text="V")
+plotshape(compraRaw and not compra, "Filtrado", style=shape.triangleup, location=location.belowbar, color=color.new(color.gray, 40), size=size.tiny, text="F")
+plotshape(vendaRaw and not venda, "Filtrado", style=shape.triangledown, location=location.abovebar, color=color.new(color.gray, 40), size=size.tiny, text="F")
+
+var bool inTrade = false
+var int dir = 0
+var int entryBar = 0
+var float sPx = na
+var float tPx = na
+var float plR = 0.0
+var int nW = 0
+var int nL = 0
+sig = (compra or venda) and not inTrade
+
+if sig
+    dir := compra ? 1 : -1
+    sPx := compra ? low : high
+    tPx := compra ? close + rr * (close - low) : close - rr * (high - close)
+    entryBar := bar_index
+    inTrade := true
+
+if inTrade and bar_index > entryBar
+    if dir == 1
+        if low <= sPx
+            plR += -1.0
+            nL += 1
+            inTrade := false
+        else if high >= tPx
+            plR += rr
+            nW += 1
+            inTrade := false
+    else
+        if high >= sPx
+            plR += -1.0
+            nL += 1
+            inTrade := false
+        else if low <= tPx
+            plR += rr
+            nW += 1
+            inTrade := false
+
+lvc = close[1]
+lvh = high[1]
+lvl = low[1]
+lvStop = tend == "alta" ? lvl : lvh
+lvAlvo = tend == "alta" ? lvc + rr * (lvc - lvl) : lvc - rr * (lvh - lvc)
+
+var line pE = na
+var line pS = na
+var line pT = na
+var label lbE = na
+var label lbS = na
+var label lbT = na
+
+if barstate.islast and tend != "indefinida"
+    if na(pE)
+        pE := line.new(bar_index, lvc, bar_index, lvc, color=color.new(color.white, 20), width=1, style=line.style_dotted, extend=extend.right)
+        pS := line.new(bar_index, lvStop, bar_index, lvStop, color=color.new(color.red, 0), width=1, style=line.style_dashed, extend=extend.right)
+        pT := line.new(bar_index, lvAlvo, bar_index, lvAlvo, color=color.new(color.green, 0), width=1, style=line.style_dashed, extend=extend.right)
+        lbE := label.new(bar_index, lvc, "ENTRADA " + str.tostring(lvc, format.mintick), style=label.style_label_left, color=color.new(color.white, 20), textcolor=color.white, size=size.small)
+        lbS := label.new(bar_index, lvStop, "STOP " + str.tostring(lvStop, format.mintick), style=label.style_label_left, color=color.new(color.red, 0), textcolor=color.white, size=size.small)
+        lbT := label.new(bar_index, lvAlvo, "ALVO " + str.tostring(lvAlvo, format.mintick), style=label.style_label_left, color=color.new(color.green, 0), textcolor=color.white, size=size.small)
+    else
+        line.set_xy1(pE, bar_index, lvc)
+        line.set_xy2(pE, bar_index, lvc)
+        line.set_xy1(pS, bar_index, lvStop)
+        line.set_xy2(pS, bar_index, lvStop)
+        line.set_xy1(pT, bar_index, lvAlvo)
+        line.set_xy2(pT, bar_index, lvAlvo)
+        label.set_xy(lbE, bar_index, lvc)
+        label.set_text(lbE, "ENTRADA " + str.tostring(lvc, format.mintick))
+        label.set_xy(lbS, bar_index, lvStop)
+        label.set_text(lbS, "STOP " + str.tostring(lvStop, format.mintick))
+        label.set_xy(lbT, bar_index, lvAlvo)
+        label.set_text(lbT, "ALVO " + str.tostring(lvAlvo, format.mintick))
+
+var table tbl = table.new(position.bottom_right, 1, 5, bgcolor=color.new(color.black, 70), border_width=1)
+if barstate.islast
+    tot = nW + nL
+    wrP = tot > 0 ? 100.0 * nW / tot : 0.0
+    corPL = plR >= 0 ? color.green : color.red
+    table.cell(tbl, 0, 0, "P/L acumulado: " + str.tostring(plR, "#.1") + "R", text_color=corPL, text_size=size.normal)
+    table.cell(tbl, 0, 1, "Wins: " + str.tostring(nW), text_color=color.lime, text_size=size.small)
+    table.cell(tbl, 0, 2, "Losses: " + str.tostring(nL), text_color=color.red, text_size=size.small)
+    table.cell(tbl, 0, 3, "Trades: " + str.tostring(tot), text_color=color.white, text_size=size.small)
+    table.cell(tbl, 0, 4, "Win rate: " + str.tostring(wrP, "#.0") + "%", text_color=color.white, text_size=size.small)
+    if inTrade
+        table.cell(tbl, 0, 4, "Aberta (em andamento)", text_color=color.white, text_size=size.small)

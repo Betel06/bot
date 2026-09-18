@@ -46,6 +46,18 @@ NOTIONAL_BASE = 100.0  # posicao base com stop de 1%
 SINAIS_LIVE = []
 SINAIS_LIVE_LOCK = threading.Lock()
 
+# Diagnostico do loop (Render): mostrado no /debug
+DIAG = {
+    "thread_viva": False,
+    "inicio": None,
+    "ultimo_batimento": 0,
+    "ciclos": 0,
+    "fetch_ok": 0,
+    "fetch_fail": 0,
+    "ultima_falha": "",
+    "sinais_live": 0,
+}
+
 # ---------------- CUSTOS REAIS DE FUTUROS ----------------
 # Binance futuros USDT: taker 0.05% / maker 0.02% (VIP0), slippage estimado, funding ~0.01%/8h
 TAKER_FEE = 0.0005      # entrada/saida a mercado
@@ -320,6 +332,8 @@ def formatar_resultado(symbol, side, res, entry, saida, pl_usd, pl_bruto, banca,
 # ---------------- MONITOR ----------------
 def monitorar():
     print("[Saca-Liquidez 4H] Modo estudo - banca fake ${:.2f}".format(BANCA_INICIAL))
+    DIAG["thread_viva"] = True
+    DIAG["inicio"] = time.time()
     while True:
         try:
             banca_data = carregar_banca()
@@ -331,7 +345,10 @@ def monitorar():
             for symbol in MOEDAS:
                 try:
                     O, H, L, C, T = dados_4h(symbol)
+                    DIAG["fetch_ok"] += 1
                 except Exception as e:
+                    DIAG["fetch_fail"] += 1
+                    DIAG["ultima_falha"] = "{}: {}".format(symbol, str(e)[:120])
                     print("[{}] fetch falhou: {}".format(symbol, e))
                     continue
                 sinais = buscar_sinais(O, H, L, C)
@@ -358,6 +375,7 @@ def monitorar():
                     })
                     agora = time.time()
                     SINAIS_LIVE[:] = [r for r in SINAIS_LIVE if r["t"] > agora - 259200][-300:]
+                DIAG["sinais_live"] = len(SINAIS_LIVE)
 
                 print("[{}] SINAL {} ent={:.6g} stop={:.6g} [{}] lev={:.2f}x notional=${:.2f}".format(
                     symbol, side, entry, stop, modo, lev, notional))
@@ -417,6 +435,8 @@ def monitorar():
                     symbol, res, pl_bruto, custos["total"], pl, msgr))
 
             time.sleep(LOOP_SEG)
+            DIAG["ciclos"] += 1
+            DIAG["ultimo_batimento"] = time.time()
         except Exception as e:
             print("[monitor] erro geral: {}".format(e))
             time.sleep(LOOP_SEG)
@@ -479,7 +499,14 @@ def web_server():
                 trades = b.get("trades", [])
                 logs = [t.get("data_sinal", "") + " " + t.get("moeda", "") + " " +
                         t.get("lado", "") + " " + str(t.get("resultado", "")) for t in trades[-20:]]
-            return jsonify({"banca": carregar_banca().get("banca"), "trades_recentes": logs})
+            agora = time.time()
+            diag = dict(DIAG)
+            diag["thread_viva"] = DIAG["thread_viva"]
+            diag["segundos_desde_batimento"] = round(agora - DIAG["ultimo_batimento"], 1)
+            diag["segundos_rodando"] = round(agora - DIAG["inicio"], 1) if DIAG["inicio"] else None
+            diag["sinais_live"] = len(SINAIS_LIVE)
+            return jsonify({"banca": carregar_banca().get("banca"), "trades_recentes": logs,
+                            "monitor": diag})
         except Exception as e:
             return jsonify({"erro": str(e)}), 500
 

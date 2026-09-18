@@ -1,0 +1,428 @@
+// Este trabalho é licenciado sob a Licença Internacional Attribution-ShareAlike 4.0 (CC BY-SA 4.0)
+// https://creativecommons.org/licenses/by-sa/4.0/
+// © Uptrick
+// Versão traduzida para português
+//@version=6
+
+indicator('Uptrick: Banda Momentum Adaptativa', overlay = true, max_labels_count = 500)
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  CONFIGURAÇÕES PRINCIPAIS                                        ║
+// ╚══════════════════════════════════════════════════════════════════╝
+grp1 = '━━━━━━━━  Configurações Principais  ━━━━━━━━'
+baseLen    = input.int(8,    'Comprimento Base',   minval = 2,   maxval = 50,  group = grp1)
+atrLen     = input.int(7,    'Comprimento ATR',    minval = 3,   maxval = 30,  group = grp1)
+bandSmooth = input.int(8,    'Suavização da Banda', minval = 2,   maxval = 50,  group = grp1)
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  MULTIPLICADORES DAS BANDAS                                      ║
+// ╚══════════════════════════════════════════════════════════════════╝
+grp1b = '━━━━━━━━  Multiplicadores das Bandas  ━━━━━━━━'
+upperMult  = input.float(1.5, 'Multiplicador Banda Superior', minval = 0.1, maxval = 6.0, step = 0.05, group = grp1b,
+     tooltip = 'Controla quão longe a banda superior fica da linha central. Maior = mais folga (menos sinais de alta).')
+lowerMult  = input.float(1.5, 'Multiplicador Banda Inferior', minval = 0.1, maxval = 6.0, step = 0.05, group = grp1b,
+     tooltip = 'Controla quão longe a banda inferior fica da linha central. Maior = mais folga (menos sinais de baixa).')
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  SENSIBILIDADE ADAPTATIVA                                        ║
+// ╚══════════════════════════════════════════════════════════════════╝
+grp2      = '━━━━━━━━  Sensibilidade Adaptativa  ━━━━━━━━'
+adaptLen   = input.int(14, 'Período de Eficiência', minval = 5,  maxval = 50, group = grp2)
+fastSmooth = input.int(2,  'EMA Rápida',          minval = 1,  maxval = 5,  group = grp2)
+slowSmooth = input.int(10, 'EMA Lenta',           minval = 3,  maxval = 30, group = grp2)
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  EXIBIÇÃO                                                        ║
+// ╚══════════════════════════════════════════════════════════════════╝
+grp3        = '━━━━━━━━  Exibição  ━━━━━━━━'
+displayMode = input.string('Bandas', 'Modo de Exibição',
+     options = ['Bandas', 'Somente Linha', 'Trail'], group = grp3)
+fillTrans   = input.int(85, 'Opacidade do Preenchimento', minval = 50, maxval = 99, group = grp3)
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  CORES                                                           ║
+// ╚══════════════════════════════════════════════════════════════════╝
+grp4      = '━━━━━━━━  Cores  ━━━━━━━━'
+bullMain  = input.color(color.new(#5CF0D7, 0), 'Cor de Alta', group = grp4)
+bearMain  = input.color(color.new(#B32AC3, 0), 'Cor de Baixa', group = grp4)
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  RÓTULOS DE SINAL                                                ║
+// ╚══════════════════════════════════════════════════════════════════╝
+grpL           = '━━━━━━━━  Rótulos de Sinal  ━━━━━━━━'
+showLabels     = input.bool(true,  'Mostrar Rótulos',         group = grpL)
+labelAnchor    = input.string('Linha Central', 'Ancoragem do Rótulo',
+     options   = ['Máxima/Mínima', 'Linha Central', 'Bandas'], group = grpL)
+labelOffsetMult = input.float(0.50, 'Afastamento (ATR)',
+     minval    = 0.0, step = 0.05,                        group = grpL)
+labelSize      = input.string('Normal', 'Tamanho do Rótulo',
+     options   = ['Mínimo', 'Pequeno', 'Normal', 'Grande'], group = grpL)
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  TABELA DE STATUS                                                ║
+// ╚══════════════════════════════════════════════════════════════════╝
+grpT        = '━━━━━━━━  Tabela de Status  ━━━━━━━━'
+showTable   = input.bool(true,  'Mostrar Tabela',   group = grpT)
+tblPos      = input.string('Baixo Direita', 'Posição',
+     options = ['Topo Esquerda','Topo Direita','Baixo Esquerda','Baixo Direita'], group = grpT)
+tblTextSize = input.string('Pequeno', 'Tamanho do Texto',
+     options = ['Mínimo','Pequeno','Normal'], group = grpT)
+
+// ══════════════════════════════════════════════════════════════════
+//  VELOCIDADE ADAPTATIVA
+// ══════════════════════════════════════════════════════════════════
+direction = math.abs(close - close[adaptLen])
+noise     = math.sum(math.abs(close - close[1]), adaptLen)
+er        = noise != 0 ? direction / noise : 0.0
+
+fastSC = 2.0 / (fastSmooth + 1)
+slowSC = 2.0 / (slowSmooth + 1)
+sc     = math.pow(er * (fastSC - slowSC) + slowSC, 2)
+
+// ══════════════════════════════════════════════════════════════════
+//  LINHA DE BASE ADAPTATIVA
+// ══════════════════════════════════════════════════════════════════
+var float ama1 = na
+ama1    := na(ama1[1]) ? close : ama1[1] + sc * (close - ama1[1])
+ama2    = ta.ema(ama1, math.max(2, math.round(baseLen * 0.5)))
+amrLine = ta.ema(ama2, 2)
+ema2Line = ta.ema(amrLine, 2)
+
+// ══════════════════════════════════════════════════════════════════
+//  BANDAS SUAVIZADAS  (multiplicadores superior/inferior separados)
+// ══════════════════════════════════════════════════════════════════
+atrSmooth = ta.ema(ta.atr(atrLen), bandSmooth)
+atrNorm   = ta.ema(atrSmooth, atrLen)
+volRatio  = atrSmooth / atrNorm
+
+dynMultUp = upperMult * math.max(0.5, math.min(volRatio, 1.8))
+dynMultDn = lowerMult * math.max(0.5, math.min(volRatio, 1.8))
+
+upperBand = ta.ema(amrLine + dynMultUp * atrSmooth, bandSmooth)
+lowerBand = ta.ema(amrLine - dynMultDn * atrSmooth, bandSmooth)
+
+// ══════════════════════════════════════════════════════════════════
+//  ESTADO DA TENDÊNCIA  — travado, nunca neutro
+// ══════════════════════════════════════════════════════════════════
+var bool isBull = true
+if close > upperBand
+    isBull := true
+if close < lowerBand
+    isBull := false
+
+trendCol = isBull ? bullMain : bearMain
+
+// ══════════════════════════════════════════════════════════════════
+//  FLAGS DE EXIBIÇÃO
+// ══════════════════════════════════════════════════════════════════
+isBands   = displayMode == 'Bandas'
+isMidline = displayMode == 'Somente Linha'
+isTrail   = displayMode == 'Trail'
+
+trailLine = isBull ? lowerBand : upperBand
+
+// ══════════════════════════════════════════════════════════════════
+//  GRÁFICOS
+// ══════════════════════════════════════════════════════════════════
+
+// Bandas
+pUpper = plot(isBands ? upperBand : na, 'Banda Superior',
+     color = color.new(trendCol, 45), linewidth = 1)
+pLower = plot(isBands ? lowerBand : na, 'Banda Inferior',
+     color = color.new(trendCol, 45), linewidth = 1)
+
+// Linha central (brilho grosso + linha fina nítida)
+pMid   = plot(not isTrail ? amrLine  : na, 'Linha Central AMR',
+     color = trendCol, linewidth = 2)
+pEma2  = plot(not isTrail ? ema2Line : na, 'EMA2 da Linha Central',
+     color = color.new(trendCol, 55), linewidth = 1)
+pMid1  = plot(not isTrail ? amrLine  : na, 'Brilho da Linha Central',
+     color = color.new(trendCol, 70), linewidth = 10)
+pEma21 = plot(not isTrail ? ema2Line : na, 'Brilho EMA2',
+     color = color.new(trendCol, 70), linewidth = 10)
+
+// Trail
+pTrail    = plot(isTrail ? trailLine : na, 'Trail',
+     color = trendCol, linewidth = 2)
+pMidTrail = plot(isTrail ? amrLine   : na, 'Linha Central (trail)',
+     color = color.new(trendCol, 60), linewidth = 1)
+
+// ══════════════════════════════════════════════════════════════════
+//  PREENCHIMENTOS
+// ══════════════════════════════════════════════════════════════════
+fill(pUpper, pLower,
+     color = isBands ? color.new(trendCol, fillTrans) : na,
+     title = 'Preenchimento das Bandas')
+
+fill(pMid, pEma2,
+     color = not isTrail ? color.new(trendCol, 0) : na,
+     title = 'Faixa da Linha Central')
+
+fill(pTrail, pMidTrail,
+     top_value    = isTrail ? isBull ? amrLine   : trailLine : na,
+     bottom_value = isTrail ? isBull ? trailLine : amrLine   : na,
+     top_color    = isTrail ? isBull ? color.new(trendCol, 100) : color.new(trendCol, 70)  : na,
+     bottom_color = isTrail ? isBull ? color.new(trendCol, 70)  : color.new(trendCol, 100) : na,
+     title        = 'Degradê do Trail')
+
+// ══════════════════════════════════════════════════════════════════
+//  COR DA BARRA / VELA
+// ══════════════════════════════════════════════════════════════════
+barcolor(color.new(trendCol, 0))
+plotcandle(open, high, low, close,
+     color       = color.new(trendCol, 0),
+     wickcolor   = color.new(trendCol, 0),
+     bordercolor = color.new(trendCol, 0))
+
+// ══════════════════════════════════════════════════════════════════
+//  RÓTULOS DE SINAL  — COMPRA / VENDA
+// ══════════════════════════════════════════════════════════════════
+f_lblSize(string s) =>
+    s == 'Mínimo'   ? size.tiny   :
+     s == 'Pequeno'  ? size.small  :
+     s == 'Grande'  ? size.large  :
+     size.normal
+
+int   lastState  = isBull ? 1 : -1
+var int prevState = lastState
+
+labelOffset = ta.atr(14) * labelOffsetMult
+
+baseLongY  =
+     labelAnchor == 'Máxima/Mínima' ? low        :
+     labelAnchor == 'Bandas'        ? lowerBand :
+     amrLine
+
+baseShortY =
+     labelAnchor == 'Máxima/Mínima' ? high       :
+     labelAnchor == 'Bandas'        ? upperBand :
+     amrLine
+
+longY  = baseLongY  - labelOffset
+shortY = baseShortY + labelOffset
+
+if barstate.isconfirmed
+    if showLabels and lastState != prevState and prevState != 0
+        if lastState == 1
+            label.new(
+                 bar_index, longY,
+                 'Compra',
+                 style     = label.style_label_up,
+                 color     = bullMain,
+                 textcolor = color.black,
+                 size      = f_lblSize(labelSize)
+            )
+        else if lastState == -1
+            label.new(
+                 bar_index, shortY,
+                 'Venda',
+                 style     = label.style_label_down,
+                 color     = bearMain,
+                 textcolor = color.white,
+                 size      = f_lblSize(labelSize)
+            )
+    prevState := lastState
+
+// ── SINAIS DE ENTRADA (disparados junto com Compra/Venda) ──────────
+sinalCompra = barstate.isconfirmed and not na(prevState[1]) and prevState[1] != 0 and lastState == 1 and lastState != prevState[1]
+sinalVenda = barstate.isconfirmed and not na(prevState[1]) and prevState[1] != 0 and lastState == -1 and lastState != prevState[1]
+
+plotshape(sinalCompra, "ENTRADA COMPRA", style=shape.triangleup, location=location.belowbar, color=color.new(bullMain, 0), size=size.small)
+plotshape(sinalVenda, "ENTRADA VENDA", style=shape.triangledown, location=location.abovebar, color=color.new(bearMain, 0), size=size.small)
+
+// ══════════════════════════════════════════════════════════════════
+//  TABELA DE STATUS
+// ══════════════════════════════════════════════════════════════════
+
+// ── Auxiliares ─────────────────────────────────────────────────────
+f_tblPos(string p) =>
+    p == 'Topo Esquerda'   ? position.top_left     :
+     p == 'Topo Direita'    ? position.top_right    :
+     p == 'Baixo Esquerda'  ? position.bottom_left  :
+     position.bottom_right
+
+f_tblTxt(string s) =>
+    s == 'Mínimo'   ? size.tiny   :
+     s == 'Normal' ? size.normal :
+     size.small
+
+// ── Métricas derivadas ─────────────────────────────────────────────
+float roc1  = ta.roc(close, 1)
+float roc5  = ta.roc(close, 5)
+float roc20 = ta.roc(close, 20)
+
+// Razão de eficiência (já calculada acima como `er`) — exposta em %
+float erPct = math.round(er * 100, 1)
+
+// Largura da banda em % da linha central
+float bWidth = amrLine != 0.0 ?
+     math.round((upperBand - lowerBand) / amrLine * 100, 2) : na
+
+// Distância do fechamento até a linha central (%)
+float distMid = amrLine != 0.0 ?
+     math.round((close - amrLine) / amrLine * 100, 2) : na
+
+// Barras desde a última virada
+var int barsSinceFlip = 0
+if lastState != prevState[1]          // detecta virada na barra confirmada
+    barsSinceFlip := 0
+else
+    barsSinceFlip += 1
+
+// Valor do ATR (suavizado)
+float atrVal = math.round(atrSmooth, 2)
+
+// ── Auxiliares de cor ──────────────────────────────────────────────
+BLK  = #0a0a0a
+DGRY = color.new(color.gray, 55)
+LGRY = color.new(color.gray, 25)
+WHT  = #e8e8e8
+ACC  = isBull ? bullMain : bearMain
+
+f_valCol(float v) => v > 0 ? bullMain : bearMain
+f_fmt(float v, string suf) => str.tostring(math.round(v, 2)) + suf
+
+// ── Declaração da tabela ───────────────────────────────────────────
+var table tbl = table.new(
+     f_tblPos(tblPos), 2, 11,
+     bgcolor      = color.new(BLK, 5),
+     border_color = color.new(color.gray, 60),
+     frame_color  = color.new(color.gray, 45),
+     frame_width  = 1,
+     border_width = 1
+)
+
+// ── Desenha a tabela em tempo real / barra histórica ───────────────
+if showTable and (barstate.islastconfirmedhistory or barstate.isrealtime)
+    sz = f_tblTxt(tblTextSize)
+
+    // ── Linha 0: Cabeçalho ───────────────────────────────────────
+    table.cell(tbl, 0, 0, 'AMB v2  ·  Status',
+         text_color   = ACC,
+         bgcolor      = color.new(BLK, 0),
+         text_halign  = text.align_center,
+         text_size    = sz,
+         text_font_family = font.family_monospace)
+    table.merge_cells(tbl, 0, 0, 1, 0)
+
+    // ── Linha 1: Tendência ────────────────────────────────────────
+    trendStr = isBull ? '▲  ALTA' : '▼  BAIXA'
+    trendC   = isBull ? bullMain  : bearMain
+    table.cell(tbl, 0, 1, 'Tendência',
+         text_color = LGRY, bgcolor = color.new(trendC, 90),
+         text_halign = text.align_left, text_size = sz,
+         text_font_family = font.family_monospace)
+    table.cell(tbl, 1, 1, trendStr,
+         text_color = trendC, bgcolor = color.new(trendC, 90),
+         text_halign = text.align_right, text_size = sz,
+         text_font_family = font.family_monospace)
+
+    // ── Linha 2: Barras na tendência ─────────────────────────────
+    table.cell(tbl, 0, 2, 'Barras na Tendência',
+         text_color = LGRY, bgcolor = color.new(BLK, 20),
+         text_halign = text.align_left, text_size = sz,
+         text_font_family = font.family_monospace)
+    table.cell(tbl, 1, 2, str.tostring(barsSinceFlip),
+         text_color = WHT, bgcolor = color.new(BLK, 20),
+         text_halign = text.align_right, text_size = sz,
+         text_font_family = font.family_monospace)
+
+    // ── Linha 3: Razão de Eficiência ─────────────────────────────
+    erC = erPct > 60 ? bullMain : erPct > 35 ? color.orange : bearMain
+    table.cell(tbl, 0, 3, 'Eficiência %',
+         text_color = LGRY, bgcolor = color.new(BLK, 20),
+         text_halign = text.align_left, text_size = sz,
+         text_font_family = font.family_monospace)
+    table.cell(tbl, 1, 3, f_fmt(erPct, '%'),
+         text_color = erC, bgcolor = color.new(BLK, 20),
+         text_halign = text.align_right, text_size = sz,
+         text_font_family = font.family_monospace)
+
+    // ── Linha 4: Largura da banda ────────────────────────────────
+    bwC = na(bWidth) ? LGRY : bWidth > 5.0 ? bearMain : bullMain
+    table.cell(tbl, 0, 4, 'Larg. Banda %',
+         text_color = LGRY, bgcolor = color.new(BLK, 20),
+         text_halign = text.align_left, text_size = sz,
+         text_font_family = font.family_monospace)
+    table.cell(tbl, 1, 4, na(bWidth) ? '—' : f_fmt(bWidth, '%'),
+         text_color = bwC, bgcolor = color.new(BLK, 20),
+         text_halign = text.align_right, text_size = sz,
+         text_font_family = font.family_monospace)
+
+    // ── Linha 5: Dist. da linha central ──────────────────────────
+    dmC = na(distMid) ? LGRY : distMid > 0 ? bullMain : bearMain
+    table.cell(tbl, 0, 5, 'Dist. Linha %',
+         text_color = LGRY, bgcolor = color.new(BLK, 20),
+         text_halign = text.align_left, text_size = sz,
+         text_font_family = font.family_monospace)
+    table.cell(tbl, 1, 5, na(distMid) ? '—' : f_fmt(distMid, '%'),
+         text_color = dmC, bgcolor = color.new(BLK, 20),
+         text_halign = text.align_right, text_size = sz,
+         text_font_family = font.family_monospace)
+
+    // ── Linha 6: ATR ─────────────────────────────────────────────
+    table.cell(tbl, 0, 6, 'ATR (suavizado)',
+         text_color = LGRY, bgcolor = color.new(BLK, 20),
+         text_halign = text.align_left, text_size = sz,
+         text_font_family = font.family_monospace)
+    table.cell(tbl, 1, 6, str.tostring(atrVal),
+         text_color = WHT, bgcolor = color.new(BLK, 20),
+         text_halign = text.align_right, text_size = sz,
+         text_font_family = font.family_monospace)
+
+    // ── Linha 7: ROC 1 barra ─────────────────────────────────────
+    table.cell(tbl, 0, 7, 'ROC  1 barra',
+         text_color = LGRY, bgcolor = color.new(BLK, 20),
+         text_halign = text.align_left, text_size = sz,
+         text_font_family = font.family_monospace)
+    table.cell(tbl, 1, 7, f_fmt(math.round(roc1,  2), '%'),
+         text_color = f_valCol(roc1), bgcolor = color.new(BLK, 20),
+         text_halign = text.align_right, text_size = sz,
+         text_font_family = font.family_monospace)
+
+    // ── Linha 8: ROC 5 barras ────────────────────────────────────
+    table.cell(tbl, 0, 8, 'ROC  5 barras',
+         text_color = LGRY, bgcolor = color.new(BLK, 20),
+         text_halign = text.align_left, text_size = sz,
+         text_font_family = font.family_monospace)
+    table.cell(tbl, 1, 8, f_fmt(math.round(roc5,  2), '%'),
+         text_color = f_valCol(roc5), bgcolor = color.new(BLK, 20),
+         text_halign = text.align_right, text_size = sz,
+         text_font_family = font.family_monospace)
+
+    // ── Linha 9: ROC 20 barras ───────────────────────────────────
+    table.cell(tbl, 0, 9, 'ROC 20 barras',
+         text_color = LGRY, bgcolor = color.new(BLK, 20),
+         text_halign = text.align_left, text_size = sz,
+         text_font_family = font.family_monospace)
+    table.cell(tbl, 1, 9, f_fmt(math.round(roc20, 2), '%'),
+         text_color = f_valCol(roc20), bgcolor = color.new(BLK, 20),
+         text_halign = text.align_right, text_size = sz,
+         text_font_family = font.family_monospace)
+
+    // ── Linha 10: Lembrete dos multiplicadores ───────────────────
+    multStr = '↑ ' + str.tostring(upperMult) + '  ↓ ' + str.tostring(lowerMult)
+    table.cell(tbl, 0, 10, 'Mults  Cim/Baix',
+         text_color = DGRY, bgcolor = color.new(BLK, 5),
+         text_halign = text.align_left, text_size = sz,
+         text_font_family = font.family_monospace)
+    table.cell(tbl, 1, 10, multStr,
+         text_color = ACC, bgcolor = color.new(BLK, 5),
+         text_halign = text.align_right, text_size = sz,
+         text_font_family = font.family_monospace)
+
+// ══════════════════════════════════════════════════════════════════
+//  ALERTAS
+// ══════════════════════════════════════════════════════════════════
+alertcondition(
+     close > upperBand and not (close[1] > upperBand[1]),
+     'Virou Alta',
+     'AMB v2: Preço fechou acima da banda superior — sinal de COMPRA')
+alertcondition(
+     close < lowerBand and not (close[1] < lowerBand[1]),
+     'Virou Baixa',
+     'AMB v2: Preço fechou abaixo da banda inferior — sinal de VENDA')
+
+// ── ENTRADAS (para o bot): alerta dedicado no sinal Compra/Venda ──
+alertcondition(sinalCompra, 'ENTRADA COMPRA (AMB)', 'ENTRADA COMPRA no {{ticker}} — tendencia virou alta (5m)')
+alertcondition(sinalVenda, 'ENTRADA VENDA (AMB)', 'ENTRADA VENDA no {{ticker}} — tendencia virou baixa (5m)')

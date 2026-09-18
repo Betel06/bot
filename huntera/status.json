@@ -1,0 +1,31 @@
+{
+  "modo": "caça",
+  "personagem": "UnOrdinary",
+  "level": 72,
+  "hp": 810,
+  "hp_max": 810,
+  "mp": 579,
+  "mp_max": 685,
+  "gold": 158377,
+  "capacity_oz": 2.45,
+  "lugar": "desconhecido",
+  "caçando": false,
+  "em_cidade": true,
+  "total_rodadas": 1,
+  "dispatch_timer": 1788203929.0685682,
+  "pocoes_usadas": 0,
+  "dispatches_feitos": 0,
+  "ultimo_update": "2026-08-31 16:19:23",
+  "caçada_atual": null,
+  "paralisado": false,
+  "status_msg": "",
+  "abertas": 0,
+  "encerradas": 0,
+  "mochila_cheia": false,
+  "tem_loot": true,
+  "_hp_hist": [
+    100
+  ],
+  "_hp_zero_seguidos": 0,
+  "_hp_full_seguidos": 1
+}

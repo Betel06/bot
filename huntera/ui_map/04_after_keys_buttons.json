@@ -1,0 +1,148 @@
+[
+  {
+    "tag": "BUTTON",
+    "text": "",
+    "x": 121,
+    "y": 33,
+    "w": 46,
+    "h": 46,
+    "cls": ""
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Taxa de exp+2%",
+    "x": 208,
+    "y": 48,
+    "w": 112,
+    "h": 19,
+    "cls": ""
+  },
+  {
+    "tag": "BUTTON",
+    "text": "0",
+    "x": 309,
+    "y": 33,
+    "w": 95,
+    "h": 27,
+    "cls": ""
+  },
+  {
+    "tag": "BUTTON",
+    "text": "+",
+    "x": 369,
+    "y": 33,
+    "w": 17,
+    "h": 17,
+    "cls": ""
+  },
+  {
+    "tag": "BUTTON",
+    "text": "147.447",
+    "x": 443,
+    "y": 33,
+    "w": 110,
+    "h": 29,
+    "cls": ""
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Loja",
+    "x": 552,
+    "y": 33,
+    "w": 86,
+    "h": 46,
+    "cls": "nav-labeled nav-glow"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Personagem",
+    "x": 758,
+    "y": 33,
+    "w": 48,
+    "h": 46,
+    "cls": "nav-labeled"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Caçar",
+    "x": 811,
+    "y": 33,
+    "w": 48,
+    "h": 46,
+    "cls": "nav-labeled"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Prey",
+    "x": 865,
+    "y": 33,
+    "w": 48,
+    "h": 46,
+    "cls": "nav-labeled"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Amigos",
+    "x": 918,
+    "y": 33,
+    "w": 48,
+    "h": 46,
+    "cls": "nav-labeled"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Guild",
+    "x": 972,
+    "y": 33,
+    "w": 48,
+    "h": 46,
+    "cls": "nav-labeled"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Wiki",
+    "x": 1026,
+    "y": 33,
+    "w": 48,
+    "h": 46,
+    "cls": "nav-labeled"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Ranking",
+    "x": 1079,
+    "y": 33,
+    "w": 48,
+    "h": 46,
+    "cls": "nav-labeled"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Discord",
+    "x": 1133,
+    "y": 33,
+    "w": 48,
+    "h": 46,
+    "cls": "nav-labeled"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Convidar",
+    "x": 1186,
+    "y": 33,
+    "w": 48,
+    "h": 46,
+    "cls": "nav-labeled"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Opções",
+    "x": 1240,
+    "y": 33,
+    "w": 48,
+    "h": 46,
+    "cls": "nav-labeled"
+  },
+  {
+    "tag": "BUTTON",
+    "text": 

@@ -1,0 +1,1290 @@
+[
+  {
+    "tag": "STRONG",
+    "text": "UnOrdinary",
+    "x": 201,
+    "y": 15,
+    "w": 98,
+    "h": 14
+  },
+  {
+    "tag": "SPAN",
+    "text": "Royal Paladin",
+    "x": 185,
+    "y": 29,
+    "w": 67,
+    "h": 12
+  },
+  {
+    "tag": "EM",
+    "text": "Lv 49",
+    "x": 237,
+    "y": 29,
+    "w": 27,
+    "h": 12
+  },
+  {
+    "tag": "SPAN",
+    "text": "Taxa de exp",
+    "x": 192,
+    "y": 48,
+    "w": 64,
+    "h": 12
+  },
+  {
+    "tag": "STRONG",
+    "text": "+2%",
+    "x": 243,
+    "y": 48,
+    "w": 27,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "0",
+    "x": 325,
+    "y": 33,
+    "w": 63,
+    "h": 17
+  },
+  {
+    "tag": "SPAN",
+    "text": "148.706",
+    "x": 454,
+    "y": 33,
+    "w": 63,
+    "h": 17
+  },
+  {
+    "tag": "SPAN",
+    "text": "Loja",
+    "x": 567,
+    "y": 33,
+    "w": 23,
+    "h": 12
+  },
+  {
+    "tag": "SPAN",
+    "text": "14028",
+    "x": 618,
+    "y": 33,
+    "w": 35,
+    "h": 17
+  },
+  {
+    "tag": "SPAN",
+    "text": "jogadores online",
+    "x": 691,
+    "y": 33,
+    "w": 99,
+    "h": 17
+  },
+  {
+    "tag": "SPAN",
+    "text": "Personagem",
+    "x": 689,
+    "y": 33,
+    "w": 91,
+    "h": 44
+  },
+  {
+    "tag": "SPAN",
+    "text": "Caçar",
+    "x": 761,
+    "y": 33,
+    "w": 55,
+    "h": 44
+  },
+  {
+    "tag": "SPAN",
+    "text": "Prey",
+    "x": 819,
+    "y": 33,
+    "w": 48,
+    "h": 44
+  },
+  {
+    "tag": "SPAN",
+    "text": "Amigos",
+    "x": 863,
+    "y": 33,
+    "w": 66,
+    "h": 44
+  },
+  {
+    "tag": "SPAN",
+    "text": "Guild",
+    "x": 923,
+    "y": 33,
+    "w": 53,
+    "h": 44
+  },
+  {
+    "tag": "SPAN",
+    "text": "Wiki",
+    "x": 979,
+    "y": 33,
+    "w": 48,
+    "h": 44
+  },
+  {
+    "tag": "SPAN",
+    "text": "Ranking",
+    "x": 1023,
+    "y": 33,
+    "w": 68,
+    "h": 44
+  },
+  {
+    "tag": "SPAN",
+    "text": "Discord",
+    "x": 1078,
+    "y": 33,
+    "w": 65,
+    "h": 44
+  },
+  {
+    "tag": "SPAN",
+    "text": "Convidar",
+    "x": 1127,
+    "y": 33,
+    "w": 73,
+    "h": 44
+  },
+  {
+    "tag": "SPAN",
+    "text": "Opções",
+    "x": 1185,
+    "y": 33,
+    "w": 65,
+    "h": 44
+  },
+  {
+    "tag": "DIV",
+    "text": "Loading…",
+    "x": 640,
+    "y": 433,
+    "w": 1280,
+    "h": 735
+  },
+  {
+    "tag": "DIV",
+    "text": "Entering world",
+    "x": 640,
+    "y": 495,
+    "w": 480,
+    "h": 17
+  },
+  {
+    "tag": "DIV",
+    "text": "100%",
+    "x": 640,
+    "y": 569,
+    "w": 480,
+    "h": 16
+  },
+  {
+    "tag": "SPAN",
+    "text": "ⓘ",
+    "x": 306,
+    "y": 671,
+    "w": 17,
+    "h": 18
+  },
+  {
+    "tag": "SPAN",
+    "text": "Detalhes da caçada",
+    "x": 417,
+    "y": 671,
+    "w": 194,
+    "h": 16
+  },
+  {
+    "tag": "SPAN",
+    "text": "Despachar loot",
+    "x": 628,
+    "y": 671,
+    "w": 153,
+    "h": 16
+  },
+  {
+    "tag": "SPAN",
+    "text": "↩",
+    "x": 747,
+    "y": 672,
+    "w": 12,
+    "h": 16
+  },
+  {
+    "tag": "SPAN",
+    "text": "Sair da caçada",
+    "x": 830,
+    "y": 672,
+    "w": 143,
+    "h": 16
+  },
+  {
+    "tag": "BUTTON",
+    "text": "»",
+    "x": 936,
+    "y": 671,
+    "w": 36,
+    "h": 34
+  },
+  {
+    "tag": "SPAN",
+    "text": "580/580",
+    "x": 240,
+    "y": 715,
+    "w": 206,
+    "h": 18
+  },
+  {
+    "tag": "SPAN",
+    "text": "+10",
+    "x": 332,
+    "y": 715,
+    "w": 15,
+    "h": 18
+  },
+  {
+    "tag": "SPAN",
+    "text": "455/455",
+    "x": 240,
+    "y": 738,
+    "w": 206,
+    "h": 18
+  },
+  {
+    "tag": "SPAN",
+    "text": "+10",
+    "x": 332,
+    "y": 738,
+    "w": 15,
+    "h": 18
+  },
+  {
+    "tag": "SPAN",
+    "text": "Lv 49",
+    "x": 158,
+    "y": 761,
+    "w": 42,
+    "h": 18
+  },
+  {
+    "tag": "SPAN",
+    "text": "25.7%",
+    "x": 322,
+    "y": 761,
+    "w": 42,
+    "h": 18
+  },
+  {
+    "tag": "SPAN",
+    "text": "11:22h",
+    "x": 318,
+    "y": 781,
+    "w": 50,
+    "h": 13
+  },
+  {
+    "tag": "BUTTON",
+    "text": "+",
+    "x": 343,
+    "y": 782,
+    "w": 15,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "160",
+    "x": 420,
+    "y": 712,
+    "w": 15,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "50",
+    "x": 465,
+    "y": 712,
+    "w": 10,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "56",
+    "x": 512,
+    "y": 712,
+    "w": 10,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "Grátis",
+    "x": 569,
+    "y": 712,
+    "w": 30,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "35",
+    "x": 606,
+    "y": 712,
+    "w": 10,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "25",
+    "x": 653,
+    "y": 712,
+    "w": 10,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "210",
+    "x": 719,
+    "y": 735,
+    "w": 15,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "160",
+    "x": 766,
+    "y": 735,
+    "w": 15,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "70",
+    "x": 816,
+    "y": 735,
+    "w": 10,
+    "h": 11
+  },
+  {
+    "tag": "BUTTON",
+    "text": "+",
+    "x": 852,
+    "y": 723,
+    "w": 42,
+    "h": 42
+  },
+  {
+    "tag": "BUTTON",
+    "text": "+",
+    "x": 429,
+    "y": 770,
+    "w": 42,
+    "h": 42
+  },
+  {
+    "tag": "SPAN",
+    "text": "60",
+    "x": 487,
+    "y": 782,
+    "w": 10,
+    "h": 11
+  },
+  {
+    "tag": "BUTTON",
+    "text": "+",
+    "x": 523,
+    "y": 770,
+    "w": 42,
+    "h": 42
+  },
+  {
+    "tag": "SPAN",
+    "text": "55",
+    "x": 581,
+    "y": 782,
+    "w": 10,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "20",
+    "x": 628,
+    "y": 782,
+    "w": 10,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "25",
+    "x": 675,
+    "y": 782,
+    "w": 10,
+    "h": 11
+  },
+  {
+    "tag": "BUTTON",
+    "text": "+",
+    "x": 711,
+    "y": 770,
+    "w": 42,
+    "h": 42
+  },
+  {
+    "tag": "BUTTON",
+    "text": "+",
+    "x": 758,
+    "y": 770,
+    "w": 42,
+    "h": 42
+  },
+  {
+    "tag": "BUTTON",
+    "text": "+",
+    "x": 805,
+    "y": 770,
+    "w": 42,
+    "h": 42
+  },
+  {
+    "tag": "BUTTON",
+    "text": "+",
+    "x": 852,
+    "y": 770,
+    "w": 42,
+    "h": 42
+  },
+  {
+    "tag": "SPAN",
+    "text": "Conjunto",
+    "x": 913,
+    "y": 718,
+    "w": 56,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "Alvo",
+    "x": 913,
+    "y": 747,
+    "w": 56,
+    "h": 11
+  },
+  {
+    "tag": "BUTTON",
+    "text": "🛡",
+    "x": 897,
+    "y": 776,
+    "w": 24,
+    "h": 24
+  },
+  {
+    "tag": "BUTTON",
+    "text": "⚖",
+    "x": 924,
+    "y": 776,
+    "w": 24,
+    "h": 24
+  },
+  {
+    "tag": "BUTTON",
+    "text": "⚔",
+    "x": 951,
+    "y": 776,
+    "w": 24,
+    "h": 24
+  },
+  {
+    "tag": "BUTTON",
+    "text": "−",
+    "x": 1028,
+    "y": 776,
+    "w": 24,
+    "h": 24
+  },
+  {
+    "tag": "BUTTON",
+    "text": "+",
+    "x": 1088,
+    "y": 776,
+    "w": 24,
+    "h": 24
+  },
+  {
+    "tag": "SPAN",
+    "text": "Chat",
+    "x": 74,
+    "y": 377,
+    "w": 25,
+    "h": 15
+  },
+  {
+    "tag": "BUTTON",
+    "text": "⛶",
+    "x": 330,
+    "y": 377,
+    "w": 26,
+    "h": 26
+  },
+  {
+    "tag": "SPAN",
+    "text": "Global",
+    "x": 84,
+    "y": 406,
+    "w": 34,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "Local",
+    "x": 134,
+    "y": 406,
+    "w": 28,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "Sistema",
+    "x": 187,
+    "y": 406,
+    "w": 41,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "Combate",
+    "x": 251,
+    "y": 406,
+    "w": 49,
+    "h": 15
+  },
+  {
+    "tag": "P",
+    "text": "PT",
+    "x": 202,
+    "y": 433,
+    "w": 282,
+    "h": 15
+  },
+  {
+    "tag": "TIME",
+    "text": "09:25",
+    "x": 74,
+    "y": 434,
+    "w": 25,
+    "h": 11
+  },
+  {
+    "tag": "STRONG",
+    "text": "Rubyzinha2[42  ]:",
+    "x": 141,
+    "y": 433,
+    "w": 105,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "ED",
+    "x": 180,
+    "y": 434,
+    "w": 13,
+    "h": 12
+  },
+  {
+    "tag": "P",
+    "text": "2 VAGAS PARA GUILD < SÓ mandar PM < 3% exp",
+    "x": 202,
+    "y": 461,
+    "w": 282,
+    "h": 30
+  },
+  {
+    "tag": "TIME",
+    "text": "09:25",
+    "x": 74,
+    "y": 454,
+    "w": 25,
+    "h": 11
+  },
+  {
+    "tag": "STRONG",
+    "text": "Hunterzada[196  ]:",
+    "x": 145,
+    "y": 453,
+    "w": 112,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "EK",
+    "x": 188,
+    "y": 454,
+    "w": 12,
+    "h": 12
+  },
+  {
+    "tag": "P",
+    "text": "procuro pt",
+    "x": 202,
+    "y": 488,
+    "w": 282,
+    "h": 15
+  },
+  {
+    "tag": "TIME",
+    "text": "09:25",
+    "x": 74,
+    "y": 489,
+    "w": 25,
+    "h": 11
+  },
+  {
+    "tag": "STRONG",
+    "text": "Arielzao[40  ]:",
+    "x": 132,
+    "y": 488,
+    "w": 87,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "RP",
+    "x": 162,
+    "y": 488,
+    "w": 14,
+    "h": 12
+  },
+  {
+    "tag": "P",
+    "text": "ek 85 disponviel pra hunt",
+    "x": 202,
+    "y": 508,
+    "w": 282,
+    "h": 15
+  },
+  {
+    "tag": "TIME",
+    "text": "09:25",
+    "x": 74,
+    "y": 509,
+    "w": 25,
+    "h": 11
+  },
+  {
+    "tag": "STRONG",
+    "text": "Winxuzada[86  ]:",
+    "x": 139,
+    "y": 508,
+    "w": 101,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "EK",
+    "x": 177,
+    "y": 508,
+    "w": 12,
+    "h": 12
+  },
+  {
+    "tag": "TIME",
+    "text": "09:25",
+    "x": 74,
+    "y": 529,
+    "w": 25,
+    "h": 11
+  },
+  {
+    "tag": "STRONG",
+    "text": "BKZERA[75  ]:",
+    "x": 134,
+    "y": 528,
+    "w": 90,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "MS",
+    "x": 163,
+    "y": 528,
+    "w": 17,
+    "h": 12
+  },
+  {
+    "tag": "P",
+    "text": "MS PROCURA PT",
+    "x": 202,
+    "y": 577,
+    "w": 282,
+    "h": 15
+  },
+  {
+    "tag": "TIME",
+    "text": "09:25",
+    "x": 74,
+    "y": 578,
+    "w": 25,
+    "h": 11
+  },
+  {
+    "tag": "STRONG",
+    "text": "RonaldinhoGaucho[82  ]:",
+    "x": 163,
+    "y": 577,
+    "w": 149,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "MS",
+    "x": 222,
+    "y": 578,
+    "w": 17,
+    "h": 12
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Enviar",
+    "x": 320,
+    "y": 623,
+    "w": 52,
+    "h": 28
+  },
+  {
+    "tag": "SPAN",
+    "text": "Analisador de caçada",
+    "x": 655,
+    "y": 93,
+    "w": 130,
+    "h": 17
+  },
+  {
+    "tag": "SPAN",
+    "text": "Sessão atual",
+    "x": 641,
+    "y": 122,
+    "w": 97,
+    "h": 12
+  },
+  {
+    "tag": "B",
+    "text": "00:37:50",
+    "x": 641,
+    "y": 139,
+    "w": 97,
+    "h": 17
+  },
+  {
+    "tag": "SPAN",
+    "text": "Próximo level",
+    "x": 750,
+    "y": 122,
+    "w": 97,
+    "h": 12
+  },
+  {
+    "tag": "B",
+    "text": "--:--:--",
+    "x": 750,
+    "y": 139,
+    "w": 97,
+    "h": 17
+  },
+  {
+    "tag": "SPAN",
+    "text": "Exp total",
+    "x": 641,
+    "y": 163,
+    "w": 97,
+    "h": 12
+  },
+  {
+    "tag": "B",
+    "text": "---",
+    "x": 641,
+    "y": 180,
+    "w": 97,
+    "h": 17
+  },
+  {
+    "tag": "SPAN",
+    "text": "Exp/h",
+    "x": 750,
+    "y": 163,
+    "w": 97,
+    "h": 12
+  },
+  {
+    "tag": "B",
+    "text": "---",
+    "x": 750,
+    "y": 180,
+    "w": 97,
+    "h": 17
+  },
+  {
+    "tag": "SPAN",
+    "text": "Lucro total",
+    "x": 641,
+    "y": 204,
+    "w": 97,
+    "h": 12
+  },
+  {
+    "tag": "B",
+    "text": "---",
+    "x": 641,
+    "y": 221,
+    "w": 97,
+    "h": 17
+  },
+  {
+    "tag": "SPAN",
+    "text": "Lucro/h",
+    "x": 750,
+    "y": 204,
+    "w": 97,
+    "h": 12
+  },
+  {
+    "tag": "B",
+    "text": "---",
+    "x": 750,
+    "y": 221,
+    "w": 97,
+    "h": 17
+  },
+  {
+    "tag": "P",
+    "text": "Acompanhe XP, lucro e o desempenho da caçada.",
+    "x": 695,
+    "y": 256,
+    "w": 206,
+    "h": 30
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Assinar Premium",
+    "x": 695,
+    "y": 301,
+    "w": 206,
+    "h": 35
+  },
+  {
+    "tag": "SPAN",
+    "text": "Loot da sessão",
+    "x": 64,
+    "y": 97,
+    "w": 91,
+    "h": 17
+  },
+  {
+    "tag": "BUTTON",
+    "text": "⛶",
+    "x": 216,
+    "y": 97,
+    "w": 26,
+    "h": 26
+  },
+  {
+    "tag": "P",
+    "text": "Nada aqui ainda — vá caçar!",
+    "x": 124,
+    "y": 140,
+    "w": 191,
+    "h": 17
+  },
+  {
+    "tag": "FOOTER",
+    "text": "Clique para pegar — expira em 15 min",
+    "x": 124,
+    "y": 188,
+    "w": 230,
+    "h": 25
+  },
+  {
+    "tag": "SPAN",
+    "text": "Cyclopedia",
+    "x": 56,
+    "y": 102,
+    "w": 91,
+    "h": 19
+  },
+  {
+    "tag": "SPAN",
+    "text": "Os registros do jogo",
+    "x": 493,
+    "y": 102,
+    "w": 765,
+    "h": 13
+  },
+  {
+    "tag": "BUTTON",
+    "text": "×",
+    "x": 898,
+    "y": 102,
+    "w": 26,
+    "h": 26
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Novidades",
+    "x": 121,
+    "y": 146,
+    "w": 221,
+    "h": 37
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Itens",
+    "x": 348,
+    "y": 146,
+    "w": 221,
+    "h": 37
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Bestiary",
+    "x": 574,
+    "y": 146,
+    "w": 221,
+    "h": 37
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Bosstiary",
+    "x": 801,
+    "y": 146,
+    "w": 221,
+    "h": 37
+  },
+  {
+    "tag": "SPAN",
+    "text": "20 de ago. de 2026",
+    "x": 106,
+    "y": 207,
+    "w": 115,
+    "h": 13
+  },
+  {
+    "tag": "SPAN",
+    "text": "Mais recente",
+    "x": 98,
+    "y": 226,
+    "w": 99,
+    "h": 16
+  },
+  {
+    "tag": "SPAN",
+    "text": "Grimvale abre, todo mundo despacha loot, e o progresso salva sozinho",
+    "x": 126,
+    "y": 252,
+    "w": 153,
+    "h": 33
+  },
+  {
+    "tag": "SPAN",
+    "text": "19 de ago. de 2026",
+    "x": 106,
+    "y": 292,
+    "w": 115,
+    "h": 13
+  },
+  {
+    "tag": "SPAN",
+    "text": "Três caçadas novas em Yalahar, e o magic shield na barra de mana",
+    "x": 126,
+    "y": 317,
+    "w": 153,
+    "h": 33
+  },
+  {
+    "tag": "SPAN",
+    "text": "18 de ago. de 2026",
+    "x": 106,
+    "y": 358,
+    "w": 115,
+    "h": 13
+  },
+  {
+    "tag": "SPAN",
+    "text": "Uma action bar mais clara e uma loja de coins maior",
+    "x": 126,
+    "y": 383,
+    "w": 153,
+    "h": 33
+  },
+  {
+    "tag": "SPAN",
+    "text": "17 de ago. de 2026",
+    "x": 106,
+    "y": 423,
+    "w": 115,
+    "h": 13
+  },
+  {
+    "tag": "SPAN",
+    "text": "Três caçadas novas, a lista da party e as expedições de guilda",
+    "x": 126,
+    "y": 448,
+    "w": 153,
+    "h": 33
+  },
+  {
+    "tag": "P",
+    "text": "4 atualizações",
+    "x": 116,
+    "y": 717,
+    "w": 192,
+    "h": 25
+  },
+  {
+    "tag": "SPAN",
+    "text": "20 de agosto de 2026",
+    "x": 317,
+    "y": 205,
+    "w": 138,
+    "h": 13
+  },
+  {
+    "tag": "SPAN",
+    "text": "Mais recente",
+    "x": 443,
+    "y": 205,
+    "w": 99,
+    "h": 16
+  },
+  {
+    "tag": "H2",
+    "text": "Grimvale abre, todo mundo despacha loot, e o progresso salva sozinho",
+    "x": 572,
+    "y": 241,
+    "w": 648,
+    "h": 44
+  },
+  {
+    "tag": "DIV",
+    "text": "◆",
+    "x": 572,
+    "y": 278,
+    "w": 648,
+    "h": 13
+  },
+  {
+    "tag": "SPAN",
+    "text": "Novas caçadas",
+    "x": 304,
+    "y": 305,
+    "w": 112,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "Dispatch de loot",
+    "x": 311,
+    "y": 415,
+    "w": 126,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "Combate",
+    "x": 280,
+    "y": 510,
+    "w": 63,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "Action bar",
+    "x": 289,
+    "y": 677,
+    "w": 83,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "Mercado",
+    "x": 281,
+    "y": 780,
+    "w": 66,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "Guildas",
+    "x": 278,
+    "y": 947,
+    "w": 60,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "Chat",
+    "x": 265,
+    "y": 1095,
+    "w": 35,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "Interface",
+    "x": 283,
+    "y": 1217,
+    "w": 70,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "Salvamento e mundos",
+    "x": 330,
+    "y": 1300,
+    "w": 165,
+    "h": 15
+  },
+  {
+    "tag": "SPAN",
+    "text": "Última atualização: 20 de agosto de 2026",
+    "x": 422,
+    "y": 774,
+    "w": 822,
+    "h": 17
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Fechar",
+    "x": 877,
+    "y": 774,
+    "w": 69,
+    "h": 35
+  },
+  {
+    "tag": "SPAN",
+    "text": "Inventário",
+    "x": 861,
+    "y": 93,
+    "w": 63,
+    "h": 17
+  },
+  {
+    "tag": "BUTTON",
+    "text": "×",
+    "x": 1252,
+    "y": 93,
+    "w": 18,
+    "h": 18
+  },
+  {
+    "tag": "SPAN",
+    "text": "100",
+    "x": 972,
+    "y": 267,
+    "w": 15,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "6",
+    "x": 979,
+    "y": 240,
+    "w": 5,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "Capacidade",
+    "x": 865,
+    "y": 411,
+    "w": 72,
+    "h": 18
+  },
+  {
+    "tag": "STRONG",
+    "text": "1141.35 oz",
+    "x": 961,
+    "y": 411,
+    "w": 72,
+    "h": 18
+  },
+  {
+    "tag": "H3",
+    "text": "Bolsa",
+    "x": 1139,
+    "y": 123,
+    "w": 264,
+    "h": 31
+  },
+  {
+    "tag": "SPAN",
+    "text": "?",
+    "x": 1253,
+    "y": 123,
+    "w": 16,
+    "h": 16
+  },
+  {
+    "tag": "H3",
+    "text": "Mochila",
+    "x": 1139,
+    "y": 250,
+    "w": 264,
+    "h": 30
+  },
+  {
+    "tag": "SPAN",
+    "text": "6",
+    "x": 1154,
+    "y": 309,
+    "w": 5,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "4",
+    "x": 1203,
+    "y": 309,
+    "w": 5,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "4",
+    "x": 1154,
+    "y": 358,
+    "w": 5,
+    "h": 11
+  },
+  {
+    "tag": "SPAN",
+    "text": "148.706",
+    "x": 1212,
+    "y": 417,
+    "w": 45,
+    "h": 15
+  },
+  {
+    "tag": "STRONG",
+    "text": "Server Save e Aplicação de Patches",
+    "x": 640,
+    "y": 341,
+    "w": 483,
+    "h": 23
+  },
+  {
+    "tag": "P",
+    "text": "Seja bem vindo ao Huntera!\n\nServer save todo dia às 12:00 PM (meio dia).",
+    "x": 640,
+    "y": 394,
+    "w": 483,
+    "h": 63
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Fechar",
+    "x": 846,
+    "y": 453,
+    "w": 71,
+    "h": 36
+  }
+]

@@ -1,0 +1,234 @@
+BUTTON.hud-city-action hud-hunt-action hud-hunt-details 'ⓘDetalhes da caçada' (281,654) 249x34
+SPAN.hud-details-glyph 'ⓘ' (297,662) 17x18
+SPAN.hud-details-label 'Detalhes da caçada' (320,663) 194x16
+DIV.hud-dispatch-group 'Despachar loot
+        »' (535,654) 185x34
+BUTTON.hud-city-action hud-hunt-action hud-hunt-quick-sell has-item 'Despachar loot' (535,654) 185x34
+SPAN.hud-chase '' (537,656) 181x30
+SPAN.hud-hunt-quick-sell-label 'Despachar loot' (551,663) 153x16
+DIV.hud-leave-group '↩Sair da caçada
+        »' (725,654) 229x34
+BUTTON.hud-city-action hud-hunt-action hud-leave-hunt '↩Sair da caçada' (725,654) 193x34
+SPAN.hud-leave-glyph '↩' (741,664) 12x16
+SPAN.hud-leave-label 'Sair da caçada' (759,664) 143x16
+BUTTON.hud-city-action hud-hunt-action hud-leave-more '»' (918,654) 36x34
+DIV.hud-bar-vitals '0/580+10450/455+10
+    
+    Lv 49
+    
+    7.7%
+  ' (136,705) 260x83
+DIV.hud-bar-vitals-tracks '0/580+10450/455+10
+    
+    Lv 49
+    
+    7.7%
+  ' (136,705) 208x83
+DIV.hud-bars '0/580+10' (136,705) 208x20
+DIV.hud-bar hud-hp '0/580+10' (136,705) 208x20
+SPAN.hud-regen '+10' (325,706) 15x18
+DIV.hud-bars '450/455+10' (136,728) 208x20
+DIV.hud-bar hud-mp '450/455+10' (136,728) 208x20
+SPAN.hud-regen '+10' (325,729) 15x18
+DIV.hud-exp-group has-stamina-buy 'Lv 49
+    
+    7.7%
+  
+    
+    
+    11:25h
+  +' (136,751) 208x37
+DIV.hud-exp 'Lv 49
+    
+    7.7%' (136,751) 208x20
+SPAN.hud-level 'Lv 49' (137,752) 42x18
+SPAN.hud-exp-percent '7.7%' (307,752) 36x18
+DIV.hud-stamina '11:25h' (136,773) 208x15
+DIV.hud-session-fill '' (137,774) 47x13
+SPAN.hud-stamina-clock '11:25h' (293,774) 50x13
+BUTTON.hud-stamina-buy '+' (336,774) 15x15
+DIV.hud-bag-buttons '' (352,705) 32x67
+BUTTON.hud-bag-button hud-bag-inventory open '' (352,705) 32x32
+CANVAS.hud-bag-icon '' (356,708) 24x24
+DIV.hud-slots '1605056Grátis352521016070++60+552025++++' (408,702) 465x89
+BUTTON.hud-slot assigned '160' (408,702) 42x42
+BUTTON.hud-slot assigned '50' (455,702) 42x42
+BUTTON.hud-slot assigned '56' (502,702) 42x42
+BUTTON.hud-slot assigned 'Grátis' (549,702) 42x42
+BUTTON.hud-slot assigned '35' (596,702) 42x42
+BUTTON.hud-slot assigned '25' (643,702) 42x42
+BUTTON.hud-slot assigned '210' (690,702) 42x42
+BUTTON.hud-slot assigned '160' (737,702) 42x42
+BUTTON.hud-slot assigned '70' (784,702) 42x42
+BUTTON.hud-slot '+' (831,702) 42x42
+BUTTON.hud-slot '+' (408,749) 42x42
+BUTTON.hud-slot assigned '60' (455,749) 42x42
+BUTTON.hud-slot '+' (502,749) 42x42
+BUTTON.hud-slot assigned '55' (549,749) 42x42
+BUTTON.hud-slot assigned '20' (596,749) 42x42
+BUTTON.hud-slot assigned '25' (643,749) 42x42
+BUTTON.hud-slot '+' (690,749) 42x42
+BUTTON.hud-slot '+' (737,749) 42x42
+BUTTON.hud-slot '+' (784,749) 42x42
+BUTTON.hud-slot '+' (831,749) 42x42
+DIV.hud-preset-rail 'Conjunto
+        
+      
+        Default
+      
+  ' (885,706) 215x82
+SPAN.hud-preset-label 'Conjunto' (885,712) 56x11
+SELECT.hud-preset-select 'Default
+      
+      ──────────
+      Salvar como ' (947,706) 153x24
+SPAN.hud-preset-label hud-rail-battle 'Alvo' (885,741) 56x11
+SELECT.hud-target-strategy hud-rail-battle 'Mais próximo
+      Menor vida
+      Maior vida
+   ' (947,735) 153x24
+DIV.hud-rail-controls hud-rail-battle '🛡
+      ⚖
+      ⚔
+    
+  
+    
+    −
+    
+    +' (885,764) 215x24
+DIV.hud-battle-row '🛡
+      ⚖
+      ⚔' (885,764) 78x24
+DIV.hud-stances '🛡
+      ⚖
+      ⚔' (885,764) 78x24
+BUTTON.hud-stance '🛡' (885,764) 24x24
+BUTTON.hud-stance active '⚖' (912,764) 24x24
+BUTTON.hud-stance '⚔' (939,764) 24x24
+DIV.hud-distance-row '−
+    
+    +' (969,764) 131x24
+SPAN.hud-distance-icon '' (969,765) 44x22
+BUTTON.hud-distance-step '−' (1016,764) 24x24
+INPUT.hud-distance-value '' (1043,765) 30x22
+BUTTON.hud-distance-step '+' (1076,764) 24x24
+SPAN.slot-count slot-mana '210' (712,729) 15x11
+SPAN.slot-count slot-mana '160' (759,729) 15x11
+SPAN.slot-count slot-mana '70' (811,729) 10x11
+SPAN.slot-count slot-mana '60' (482,776) 10x11
+SPAN.slot-count slot-mana '55' (576,776) 10x11
+SPAN.slot-count slot-mana '20' (623,776) 10x11
+SPAN.slot-count slot-mana '25' (670,776) 10x11
+DIV.world-loading-bar '' (448,527) 384x17
+DIV.header-character 'UnOrdinaryRoyal PaladinLv 49Taxa de exp+2%' (98,8) 152x49
+DIV.header-character-id 'UnOrdinaryRoyal PaladinLv 49Taxa de exp+2%' (152,8) 98x49
+STRONG.header-character-name 'UnOrdinary' (152,8) 98x14
+SPAN.header-character-vocation 'Royal PaladinLv 49' (152,23) 98x12
+SPAN.players-online '14332jogadores online' (588,24) 152x17
+SPAN.players-online-count '14332' (601,24) 35x17
+SPAN.players-online-label 'jogadores online' (641,24) 99x17
+BUTTON.chat-expand '⛶' (317,364) 26x26
+DIV.inventory-capacity 'Capacidade906.15 oz' (828,401) 170x20
+
+=== BOTTOM HUD (y > 600) ===
+SPAN.hud-details-glyph 'ⓘ' (297,662) 17x18
+SPAN.hud-details-label 'Detalhes da caçada' (320,663) 194x16
+DIV.hud-dispatch-group 'Despachar loot
+        »' (535,654) 185x34
+SPAN.hud-hunt-quick-sell-label 'Despachar loot' (551,663) 153x16
+DIV.hud-leave-group '↩Sair da caçada
+        »' (725,654) 229x34
+SPAN.hud-leave-glyph '↩' (741,664) 12x16
+SPAN.hud-leave-label 'Sair da caçada' (759,664) 143x16
+DIV.hud-bar-vitals '0/580+10450/455+10
+    
+    Lv 49
+    
+    7.7%
+  ' (136,705) 260x83
+DIV.hud-bar-vitals-tracks '0/580+10450/455+10
+    
+    Lv 49
+    
+    7.7%
+  ' (136,705) 208x83
+DIV.hud-bars '0/580+10' (136,705) 208x20
+DIV.hud-bar hud-hp '0/580+10' (136,705) 208x20
+SPAN. '0/580' (137,706) 206x18
+SPAN.hud-regen '+10' (325,706) 15x18
+DIV.hud-bars '450/455+10' (136,728) 208x20
+DIV.hud-bar hud-mp '450/455+10' (136,728) 208x20
+SPAN. '450/455' (137,729) 206x18
+SPAN.hud-regen '+10' (325,729) 15x18
+DIV.hud-exp-group has-stamina-buy 'Lv 49
+    
+    7.7%
+  
+    
+    
+    11:25h
+  +' (136,751) 208x37
+DIV.hud-exp 'Lv 49
+    
+    7.7%' (136,751) 208x20
+SPAN.hud-level 'Lv 49' (137,752) 42x18
+SPAN.hud-exp-percent '7.7%' (307,752) 36x18
+DIV.hud-stamina '11:25h' (136,773) 208x15
+SPAN.hud-stamina-clock '11:25h' (293,774) 50x13
+SPAN.slot-count slot-cost '160' (413,706) 15x11
+SPAN.slot-count slot-cost '50' (460,706) 10x11
+SPAN.slot-count slot-cost '56' (507,706) 10x11
+SPAN.slot-count slot-cost 'Grátis' (554,706) 30x11
+SPAN.slot-count slot-cost '35' (601,706) 10x11
+SPAN.slot-count slot-cost '25' (648,706) 10x11
+SPAN.slot-count slot-mana '210' (712,729) 15x11
+SPAN.slot-count slot-mana '160' (759,729) 15x11
+SPAN.slot-count slot-mana '70' (811,729) 10x11
+SPAN.slot-count slot-mana '60' (482,776) 10x11
+SPAN.slot-count slot-mana '55' (576,776) 10x11
+SPAN.slot-count slot-mana '20' (623,776) 10x11
+SPAN.slot-count slot-mana '25' (670,776) 10x11
+SPAN.hud-preset-label 'Conjunto' (885,712) 56x11
+SPAN.hud-preset-label hud-rail-battle 'Alvo' (885,741) 56x11
+DIV.hud-rail-controls hud-rail-battle '🛡
+      ⚖
+      ⚔
+    
+  
+    
+    −
+    
+    +' (885,764) 215x24
+DIV.hud-battle-row '🛡
+      ⚖
+      ⚔' (885,764) 78x24
+DIV.hud-stances '🛡
+      ⚖
+      ⚔' (885,764) 78x24
+DIV.hud-distance-row '−
+    
+    +' (969,764) 131x24
+P.cyc-rail-total '4 atualizações' (20,705) 192x25
+SPAN.cyc-note-tag fixed 'Correção' (248,571) 76x18
+SPAN.cyc-note-tag fixed 'Correção' (248,617) 76x18
+SPAN. 'Action bar' (248,670) 83x15
+SPAN.cyc-note-tag new 'Novo' (248,693) 76x18
+SPAN.cyc-note-tag new 'Novo' (248,719) 76x18
+SPAN. 'Mercado' (248,772) 66x15
+SPAN.cyc-note-tag changed 'Mudança' (248,795) 76x18
+SPAN.cyc-note-tag changed 'Mudança' (248,841) 76x18
+SPAN.cyc-note-tag fixed 'Correção' (248,886) 76x18
+SPAN. 'Guildas' (248,940) 60x15
+SPAN.cyc-note-tag improved 'Melhoria' (248,963) 76x18
+SPAN.cyc-note-tag fixed 'Correção' (248,1008) 76x18
+SPAN.cyc-note-tag fixed 'Correção' (248,1034) 76x18
+SPAN. 'Chat' (248,1088) 35x15
+SPAN.cyc-note-tag new 'Novo' (248,1111) 76x18
+SPAN.cyc-note-tag new 'Novo' (248,1156) 76x18
+SPAN. 'Interface' (248,1209) 70x15
+SPAN.cyc-note-tag improved 'Melhoria' (248,1232) 76x18
+SPAN.cyc-note-tag fixed 'Correção' (248,1258) 76x18
+SPAN. 'Salvamento e mundos' (248,1293) 165x15
+SPAN.cyc-note-tag improved 'Melhoria' (248,1316) 76x18
+SPAN.cyc-note-tag changed 'Mudança' (248,1342) 76x18
+SPAN.cyc-note-tag fixed 'Correção' (248,1387) 76x18

@@ -47,26 +47,23 @@ _bufh = _BufferHandler()
 _bufh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logging.getLogger().addHandler(_bufh)
 
-from huntera_config import (
-    HUNTERA_ENTRADA_GP,
-    HUNTERA_BANCO_INICIAL,
-    INTERVALO_RODADA,
-    HUNTERA_PERSONAGEM,
-    HUNTERA_SERVIDOR,
-    HUNTERA_MODO,
-    MAX_RODADAS_SESSAO,
-    HUNTERA_LUGARES_CACA,
-    HUNTERA_HORARIO_SERVIDOR,
-    HUNTERA_SYSTEM_SELECAO_AUTO,
-    HUNTERA_LIMITE_RISCO,
-    HUNTERA_BOLSA_SLOTES,
-    HUNTERA_ITEMS_POR_TIPO_LIMITE,
-    HUNTERA_CIDADE_AREA,
-    HUNTERA_TAXA_CIDADE_GP,
-    HUNTERA_ITENS_VENDER_MAX,
-    HUNTERA_TEMPO_VENDA,
-    HUNTERA_SALVAR_PROGRESSO,
-)
+# --- Configurações do Huntera ---
+# Todas as variáveis vêm do módulo huntera_config (importado abaixo)
+# Usamos os nomes reais do config atual
+
+# --- Define variáveis a partir de env vars ou defaults ---
+# Todas estas vars sao lidas via os.environ.get() com valores padrao seguros
+
+HUNTERA_MODO = os.environ.get("HUNTERA_MODO", "caça")
+HUNTERA_SYSTEM_SELECAO_AUTO = os.environ.get("HUNTERA_SYSTEM_SELECAO_AUTO", "True").lower() == "true"
+HUNTERA_LIMITE_RISCO = int(os.environ.get("HUNTERA_LIMITE_RISCO", "3"))
+HUNTERA_BOLSA_SLOTES = int(os.environ.get("HUNTERA_BOLSA_SLOTES", "15"))
+INTERVALO_RODADA = int(os.environ.get("INTERVALO_RODADA", "3"))
+HUNTERA_TEMPO_VENDA = int(os.environ.get("HUNTERA_TEMPO_VENDA", "30"))
+HUNTERA_ENTRADA_GP = int(os.environ.get("HUNTERA_ENTRADA_GP", "100"))
+HUNTERA_SALVAR_PROGRESSO = os.environ.get("HUNTERA_SALVAR_PROGRESSO", "True").lower() == "true"
+
+# --- Fim import config ---
 
 POSICOES_FILE = os.path.join(BOT_DIR, "logs", "posicoes_huntera.json")
 RESULTADOS_FILE = os.path.join(BOT_DIR, "logs", "resultados_huntera.json")
@@ -74,8 +71,8 @@ TABELA_FILE = os.path.join(BOT_DIR, "logs", "tabela_msg_huntera.json")
 
 ESTADO = {
     "modo": HUNTERA_MODO,
-    "personagem": HUNTERA_PERSONAGEM,
-    "servidor": HUNTERA_SERVIDOR,
+    "personagem": "UnOrdinary",
+    "servidor": "br",
     "ultima_rodada": None,
     "rodada": 0,
     "total_rodadas": 0,
@@ -115,8 +112,8 @@ def selecionar_lugar_caca():
     horario_atual = get_servidor_horario()
     HUNTERA_HORARIO_SERVIDOR = horario_atual
 
-    # Filtra apenas lugares ativos
-    lugares_ativos = {k: v for k, v in HUNTERA_LUGARES_CACA.items() if v.get("ativo", True)}
+    # Filtra apenas lugares ativos a partir do dicionário CAÇAS
+    lugares_ativos = {k: v for k, v in CAÇAS.items() if v.get("ativo", True)}
 
     # Classifica por melhor horário e risco
     candidatos = []
@@ -169,7 +166,7 @@ def selecionar_lugar_caca():
 
     # Se nenhum lugar passou no limite de risco, retorna o de menor risco
     logging.warning("[SELECT] Nenhum lugar dentro do limite de risco {}".format(HUNTERA_LIMITE_RISCO))
-    melhor = candidatos[-1] if candidatos else (0, "L1_Nova_Reserva", HUNTERA_LUGARES_CACA.get("L1_Nova_Reserva", {}))
+    melhor = candidatos[-1] if candidatos else (0, "L1_Nova_Reserva", CAÇAS.get("L1_Nova_Reserva", {}))
     return melhor[1], melhor[2]
 
 
@@ -189,7 +186,7 @@ def verificar_bolsa_cheia():
 
     # Também verifica por tipo de item
     items_tipo = ESTADO.get("itens_na_bolsa", 0)
-    limite_tipo = HUNTERA_ITEMS_POR_TIPO_LIMITE
+    limite_tipo = PESO_CHEIO  # Usa PESO_CHEIO do config como limite de tipo
 
     bolsa_cheia_por_slots = slots_ocupados >= limite_slots
     bolsa_cheia_por_tipo = items_tipo >= limite_tipo
@@ -216,7 +213,7 @@ def ir_cidade_vender():
         logging.info("[CIDADE] Bolsa: {} / {} slots ocupados".format(
             ESTADO.get("bolsa_slots_ocupados", 0), HUNTERA_BOLSA_SLOTES))
         logging.info("[CIDADE] Itens por tipo: {} / {}".format(
-            ESTADO.get("itens_na_bolsa", 0), HUNTERA_ITEMS_POR_TIPO_LIMITE))
+            ESTADO.get("itens_na_bolsa", 0), PESO_CHEIO))
 
         # 2. Simular tempo de venda
         tempo_venda = HUNTERA_TEMPO_VENDA
@@ -280,12 +277,9 @@ def engine_thread():
                     with threading.Lock():
                         ESTADO["personagem"] = estado_engine.get("personagem", ESTADO["personagem"])
                         ESTADO["total_rodadas"] = estado_engine.get("total_rodadas", ESTADO["total_rodadas"])
-                        ESTADO["trofeus_coletados"] = estado_engine.get("trofeus_coletados", ESTADO["trofeus_coletados"])
-                        ESTADO["pesos_pegos"] = estado_engine.get("pesos_pegos", ESTADO["pesos_pegos"])
-                        ESTADO["lugar_atual"] = estado_engine.get("lugar", ESTADO["lugar_atual"])
+                        ESTADO["lugar_atual"] = estado_engine.get("caçada_atual") or estado_engine.get("lugar") or ESTADO["lugar_atual"]
                         ESTADO["indo_cidade"] = estado_engine.get("em_cidade", ESTADO["indo_cidade"])
-                        ESTADO["bolsa_slots_ocupados"] = estado_engine.get("bolsa_slots_ocupados", ESTADO["bolsa_slots_ocupados"])
-                        ESTADO["modo"] = "caça (live)" if estado_engine.get("jogando") else "caça (sim)"
+                        ESTADO["modo"] = "caça (live)" if estado_engine.get("running") else "caça (sim)"
 
             except Exception as e:
                 logging.error("[ENGINE] Erro: {}".format(e))
@@ -321,7 +315,7 @@ def monitor_loop():
         logging.info("[SYSTEM] Lugar de caça selecionado: {} - {}".format(lugar_nome, lugar_dados.get("area", "N/A")))
     else:
         lugar_fixo = os.environ.get("HUNTERA_LUGAR_FIXO", "L1_Nova_Reserva")
-        lugar_dados = HUNTERA_LUGARES_CACA.get(lugar_fixo, HUNTERA_LUGARES_CACA.get("L1_Nova_Reserva", {}))
+        lugar_dados = CAÇAS.get(lugar_fixo, CAÇAS.get("L1_Nova_Reserva", {}))
         ESTADO["lugar_atual"] = lugar_fixo
         if lugar_dados:
             ESTADO["tempo_no_lugar"] = 0
@@ -346,6 +340,16 @@ def monitor_loop():
 
     rodada = 0
     intervalo = INTERVALO_RODADA
+
+    # Função auxiliar para executar operacoes com tratamento de excecao
+    # sem quebrar o loop caso ocorram erros
+    def run_safe(operation_func, nome_operacao=""):
+        """Executa uma funcao capturando exceoes para nao quebrar o loop."""
+        try:
+            return operation_func()
+        except Exception as e:
+            logging.error("[MONITOR] Erro em {}: {}".format(nome_operacao, e))
+            return False
 
     while True:
         rodada += 1
@@ -376,7 +380,7 @@ def monitor_loop():
                 ESTADO["indo_cidade"] = True
                 # Se engine live, engine_huntera cuida da venda
                 if not (ENGINE and ENGINE.running):
-                    ir_cidade_vender()
+                    run_safe(ir_cidade_vender, "ir_cidade_vender")
             else:
                 ESTADO["bolsa_cheia"] = False
 
@@ -388,12 +392,15 @@ def monitor_loop():
             if not (ENGINE and ENGINE.running):
                 if rodada % 20 == 0 or ESTADO["tempo_no_lugar"] > 300:
                     if HUNTERA_SYSTEM_SELECAO_AUTO:
-                        lugar_nome, lugar_dados = selecionar_lugar_caca()
-                        ESTADO["lugar_atual"] = lugar_nome
-                        ESTADO["tempo_no_lugar"] = 0
-                        ESTADO["mudanca_lugar_rodada"] = rodada
-                        ESTADO["ultimo_lugar_farm"] = lugar_nome
-                        logging.info("[ROTA] Novo lugar: {} - {}".format(lugar_nome, lugar_dados.get("area", "N/A")))
+                        try:
+                            lugar_nome, lugar_dados = selecionar_lugar_caca()
+                            ESTADO["lugar_atual"] = lugar_nome
+                            ESTADO["tempo_no_lugar"] = 0
+                            ESTADO["mudanca_lugar_rodada"] = rodada
+                            ESTADO["ultimo_lugar_farm"] = lugar_nome
+                            logging.info("[ROTA] Novo lugar: {} - {}".format(lugar_nome, lugar_dados.get("area", "N/A")))
+                        except Exception as e:
+                            logging.error("[ROTA] Erro ao selecionar lugar: {}".format(e))
 
             if rodada % 10 == 0:
                 engine_status = "LIVE" if (ENGINE and ENGINE.running) else "SIM"
@@ -433,7 +440,15 @@ def monitor_loop():
                 ))
 
         except Exception as e:
-            logging.error("[ERRO] {}".format(e))
+            logging.error("[ERRO CRITICO] Rodada {}: {}".format(rodada, e))
+            # NÃO faz 'raise' - continua o loop
+            # Tenta reiniciar engine se crashed
+            if ENGINE and not ENGINE.running:
+                logging.info("[MONITOR] Tentando reiniciar engine crashed...")
+                try:
+                    ENGINE = None
+                except Exception:
+                    pass
 
         time.sleep(intervalo)
 
@@ -512,7 +527,7 @@ def hello_world():
         "status": "online",
         "modo": ESTADO["modo"],
         "personagem": ESTADO["personagem"],
-        "servidor": HUNTERA_SERVIDOR,
+        "servidor": "br",
         "total_rodadas": r["total_rodadas"],
         "trofeus_coletados": r["trofeus_coletados"],
         "pesos_pegos": r["pesos_pegos"],
@@ -535,7 +550,7 @@ def status():
         "status": "online",
         "modo": ESTADO["modo"],
         "personagem": ESTADO["personagem"],
-        "servidor": HUNTERA_SERVIDOR,
+        "servidor": "br",
         "total_rodadas": r["total_rodadas"],
         "trofeus_coletados": r["trofeus_coletados"],
         "pesos_pegos": r["pesos_pegos"],
@@ -550,7 +565,7 @@ def status():
 
 @app.route("/lugares")
 def listar_lugares():
-    return {"bot": "huntera", "lugares": HUNTERA_LUGARES_CACA}
+    return {"bot": "huntera", "lugares": CAÇAS}
 
 
 @app.route("/debug")

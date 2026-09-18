@@ -1,0 +1,859 @@
+//@version=6
+// SMC 2TF + ATT/AMB (engines de tendencia alternativos)
+// Partes "Adaptive Trend Trail" e "Adaptive Momentum Bands v2" (c) Uptrick - CC BY-SA 4.0
+// https://creativecommons.org/licenses/by-sa/4.0/ - integrados sob a mesma licenca.
+// Parte SMC 2TF (setup H1 + pivos da correcao + anti-fake): autoral, mesmo arquivo.
+indicator("SMC 2TF + ATT/AMB", shorttitle="SMC2TF+ATT/AMB", overlay=true, max_boxes_count=500, max_labels_count=300, max_bars_back=5000)
+
+// ==========================================
+// 1. CONFIG
+// ==========================================
+pivot_len = input.int(10, title="Velas p/ pivo no setup (H1, esq+dir)")
+periodo_candles = input.int(200, title="EMA/ref no setup (H1)")
+tf_setup = input.timeframe("60", title="Timeframe do setup (H1)")
+ver_ema200 = input.bool(true, title="Mostrar EMA 200 (H1)")
+
+micro_len = input.int(3, title="Pivo micro da correcao (TF do grafico)", minval=2, maxval=10)
+confirm_velas = input.int(3, title="Closes consecutivos p/ confirmar rompimento (anti-fake)", minval=1, maxval=5)
+usar_engine_dir = input.bool(true, title="Direcao dos pivos segue o engine de tendencia")
+colorir_velas = input.bool(true, title="Colorir velas pela tendencia")
+engineSel = input.string("ATT", "Engine de tendencia", options=["ATT", "AMB"], group="Engine")
+
+gEnt = "ENTRADAS (virada de tendencia)"
+entradas_flip = input.bool(true, "Entrar na virada do engine", group=gEnt)
+so_5m = input.bool(true, "So operar no grafico 5 min", group=gEnt)
+usar_vol = input.bool(true, "Exigir confirmacao por volume", group=gEnt)
+vol_mult = input.float(1.0, "Volume minimo (x da media 20)", minval=0.5, maxval=5.0, step=0.1, group=gEnt)
+usar_obv = input.bool(true, "Exigir direcao do OBV a favor", group=gEnt)
+obv_bars = input.int(3, "Barras de OBV a favor p/ validar", minval=1, maxval=10, group=gEnt)
+
+mostrarOB = input.bool(false, title="Mostrar Order Blocks")
+mostrarFVG = input.bool(false, title="Mostrar FVGs")
+obImpulseMult = input.float(1.0, "Forca minima do candle p/ OB (x do corpo medio)", minval=0.3, step=0.1)
+mitigacaoPorFechamento = input.bool(false, "Mitigar zona so pelo fechamento (senao, pavio ja mitiga)")
+
+corOBBull  = color.new(color.teal, 65)
+corOBBear  = color.new(color.maroon, 65)
+corFVGBull = color.new(color.blue, 85)
+corFVGBear = color.new(color.orange, 85)
+
+// ---------- inputs do Adaptive Trend Trail ----------
+gEngine = "ATT 01. Trend Engine"
+trendLength = input.int(34, "Trend Length", minval=10, maxval=200, group=gEngine)
+momentumLength = input.int(12, "Momentum Length", minval=3, maxval=100, group=gEngine)
+sensitivity = input.float(0.35, "Signal Selectivity", minval=0.10, maxval=1.25, step=0.05, group=gEngine)
+
+gST = "ATT 02. Supertrend Confirmation"
+stFastLength = input.int(9, "Fast Length", minval=2, maxval=100, group=gST)
+stFastFactor = input.float(1.45, "Fast Factor", minval=0.25, maxval=10.0, step=0.05, group=gST)
+stMidLength = input.int(14, "Medium Length", minval=2, maxval=150, group=gST)
+stMidFactor = input.float(1.95, "Medium Factor", minval=0.25, maxval=10.0, step=0.05, group=gST)
+stSlowLength = input.int(21, "Slow Length", minval=2, maxval=200, group=gST)
+stSlowFactor = input.float(2.55, "Slow Factor", minval=0.25, maxval=10.0, step=0.05, group=gST)
+
+gOverlay = "ATT 03. Overlay"
+overlayMode = input.string("Trail", "Overlay", options=["Trail", "Bands", "None"], group=gOverlay)
+trailSize = input.float(1.00, "Width", minval=0.40, maxval=2.50, step=0.05, group=gOverlay)
+smoothness = input.int(5, "Smoothness", minval=1, maxval=20, group=gOverlay)
+
+gMeter = "ATT 04. Valuation"
+meterMode = input.string("Off", "Meter Size", options=["Off", "Compact", "Normal", "Large"], group=gMeter)
+meterPosition = input.string("Top Center", "Position", options=["Top Left", "Top Center", "Top Right", "Bottom Left", "Bottom Center", "Bottom Right"], group=gMeter)
+
+bullColor = #00FFE5
+bearColor = #FF00B5
+neutralColor = #FFD84D
+black = #000000
+white = #FFFFFF
+
+// ==========================================
+// 2. ESTRUTURA COMPUTADA NO TIMEFRAME DE SETUP (H1)
+// ==========================================
+calc_estrutura_h1() =>
+    var string tend_h1 = "Indefinida"
+    var float ctop = na
+    var float cfund = na
+    hh = ta.highest(high, periodo_candles)
+    ll = ta.lowest(low, periodo_candles)
+    if na(ctop) and not na(hh)
+        ctop := hh
+        cfund := ll
+    ph = ta.pivothigh(high, pivot_len, pivot_len)
+    pl = ta.pivotlow(low, pivot_len, pivot_len)
+    if not na(ph)
+        if tend_h1 == "Baixa"
+            meio = na(ctop) or na(cfund) ? na : (ctop + cfund) / 2
+            if na(ctop) or (not na(meio) and ph >= meio)
+                ctop := ph
+        else
+            if na(ctop) or (tend_h1 != "Alta" or ph > ctop)
+                ctop := ph
+    if not na(pl)
+        if tend_h1 == "Alta"
+            meio = na(ctop) or na(cfund) ? na : (ctop + cfund) / 2
+            if na(cfund) or (not na(meio) and pl <= meio)
+                cfund := pl
+        else
+            if na(cfund) or (tend_h1 != "Baixa" or pl < cfund)
+                cfund := pl
+    if ta.crossover(close, ctop)
+        tend_h1 := "Alta"
+    if ta.crossunder(close, cfund)
+        tend_h1 := "Baixa"
+    topo = na(ctop) ? hh : ctop
+    fundo = na(cfund) ? ll : cfund
+    [topo, fundo]
+
+[h1_topo, h1_fundo] = request.security(syminfo.tickerid, tf_setup, calc_estrutura_h1(), lookahead=barmerge.lookahead_off)
+h1_ema = request.security(syminfo.tickerid, tf_setup, ta.ema(close, periodo_candles), lookahead=barmerge.lookahead_off)
+
+nivel_50 = (h1_topo + h1_fundo) / 2
+
+// ==========================================
+// 3. ADAPTIVE TREND TRAIL - MOTOR DE TENDENCIA
+// ==========================================
+f_clamp(_v, _min, _max) =>
+    math.max(_min, math.min(_max, _v))
+
+f_position(_p) =>
+    _p == "Top Left" ? position.top_left :
+     _p == "Top Center" ? position.top_center :
+     _p == "Bottom Left" ? position.bottom_left :
+     _p == "Bottom Center" ? position.bottom_center :
+     _p == "Bottom Right" ? position.bottom_right :
+     position.top_right
+
+f_tradePnl(_side, _entry, _exit, _capital) =>
+    float gross = _capital * _side * ((_exit - _entry) / _entry)
+    float fee = _capital * 0.001
+    gross - fee
+
+basis = ta.ema(close, trendLength)
+atr = ta.atr(14)
+safeATR = math.max(atr, syminfo.mintick)
+
+momentum = ta.ema(close - close[momentumLength], 5) / safeATR
+distance = (close - basis) / safeATR
+
+effLength = 10
+netMovement = math.abs(close - close[effLength])
+travelPath = math.sum(math.abs(close - close[1]), effLength)
+
+efficiency = travelPath > 0.0 ? f_clamp(netMovement / travelPath, 0.0, 1.0) : 0.0
+chop = 1.0 - efficiency
+
+effDirection = close > close[effLength] ? 1.0 :
+     close < close[effLength] ? -1.0 : 0.0
+efficiencyField = efficiency * effDirection
+
+normalATR = ta.ema(safeATR, 50)
+volRatio = normalATR > 0.0 ? safeATR / normalATR : 1.0
+volExpansion = f_clamp(volRatio - 1.0, 0.0, 1.25)
+volDeviation = f_clamp(math.abs(volRatio - 1.0), 0.0, 1.50)
+
+fastAdaptiveFactor = stFastFactor + chop * 0.25 + volExpansion * 0.10
+midAdaptiveFactor = stMidFactor + chop * 0.35 + volExpansion * 0.15
+slowAdaptiveFactor = stSlowFactor + chop * 0.45 + volExpansion * 0.20
+
+[stFast, stFastDirection] = ta.supertrend(fastAdaptiveFactor, stFastLength)
+[stMid, stMidDirection] = ta.supertrend(midAdaptiveFactor, stMidLength)
+[stSlow, stSlowDirection] = ta.supertrend(slowAdaptiveFactor, stSlowLength)
+
+stFastBull = stFastDirection < 0
+stFastBear = stFastDirection > 0
+stMidBull = stMidDirection < 0
+stMidBear = stMidDirection > 0
+stSlowBull = stSlowDirection < 0
+stSlowBear = stSlowDirection > 0
+
+bullSTVotes = (stFastBull ? 1 : 0) + (stMidBull ? 1 : 0) + (stSlowBull ? 1 : 0)
+bearSTVotes = (stFastBear ? 1 : 0) + (stMidBear ? 1 : 0) + (stSlowBear ? 1 : 0)
+
+requiredSTVotes = chop > 0.70 ? 3 : 2
+bullSTConfirmed = bullSTVotes >= requiredSTVotes
+bearSTConfirmed = bearSTVotes >= requiredSTVotes
+fullBullST = bullSTVotes == 3
+fullBearST = bearSTVotes == 3
+
+var int bullSTBars = 0
+var int bearSTBars = 0
+if barstate.isconfirmed
+    bullSTBars := bullSTConfirmed ? math.min(bullSTBars + 1, 5) : 0
+    bearSTBars := bearSTConfirmed ? math.min(bearSTBars + 1, 5) : 0
+
+stPersistenceRequired = chop > 0.72 ? 2 : 1
+bullSTPersistent = bullSTBars >= stPersistenceRequired
+bearSTPersistent = bearSTBars >= stPersistenceRequired
+
+distanceField = f_clamp(distance / 1.20, -1.0, 1.0)
+momentumField = f_clamp(momentum / 0.35, -1.0, 1.0)
+
+basisSlope = (basis - basis[3]) / safeATR
+slopeField = f_clamp(basisSlope / 0.25, -1.0, 1.0)
+
+rsi = ta.rsi(close, 14)
+rsiField = f_clamp((rsi - 50.0) / 20.0, -1.0, 1.0)
+
+stField = (bullSTVotes - bearSTVotes) / 3.0
+slowCenter = ta.ema(hl2, math.max(10, int(math.round(trendLength * 0.70))))
+slowSlope = (slowCenter - slowCenter[3]) / safeATR
+slowSlopeField = f_clamp(slowSlope / 0.25, -1.0, 1.0)
+
+structureLength = math.max(3, int(math.round(trendLength * 0.12)))
+recentHigh = ta.highest(high[1], structureLength)
+recentLow = ta.lowest(low[1], structureLength)
+bullStructure = close > recentHigh
+bearStructure = close < recentLow
+structureField = bullStructure ? 1.0 :
+     bearStructure ? -1.0 : 0.0
+
+barRange = math.max(high - low, syminfo.mintick)
+bodyPressure = (close - open) / barRange
+closeLocation = ((close - low) / barRange - 0.50) * 2.0
+pressureField = f_clamp(bodyPressure * 0.60 + closeLocation * 0.40, -1.0, 1.0)
+
+rawRegime =
+     distanceField * 0.22 +
+     momentumField * 0.19 +
+     slopeField * 0.14 +
+     slowSlopeField * 0.10 +
+     rsiField * 0.08 +
+     efficiencyField * 0.09 +
+     pressureField * 0.05 +
+     structureField * 0.05 +
+     stField * 0.20
+
+regime = ta.ema(rawRegime, 3)
+
+chopPenalty = chop * 0.085
+volPenalty = f_clamp(volDeviation * 0.04, 0.0, 0.06)
+dynamicGate = 0.22 + sensitivity * 0.12 + chopPenalty + volPenalty
+
+bullZone = regime > dynamicGate
+bearZone = regime < -dynamicGate
+bullPriceOK = close > basis + safeATR * sensitivity * 0.30
+bearPriceOK = close < basis - safeATR * sensitivity * 0.30
+
+bullCandidate = bullZone and bullPriceOK and momentum > 0.025 and bullSTPersistent
+bearCandidate = bearZone and bearPriceOK and momentum < -0.025 and bearSTPersistent
+
+requiredBars = chop > 0.72 ? 3 :
+     chop > 0.40 ? 2 : 1
+
+var int bullConfirm = 0
+var int bearConfirm = 0
+if barstate.isconfirmed
+    bullConfirm := bullCandidate ? math.min(bullConfirm + 1, 4) : 0
+    bearConfirm := bearCandidate ? math.min(bearConfirm + 1, 4) : 0
+
+bullPersistent = bullConfirm >= requiredBars
+bearPersistent = bearConfirm >= requiredBars
+
+strongBull =
+     bullCandidate and fullBullST and
+     regime > dynamicGate + 0.26 and momentum > 0.16 and efficiency > 0.42
+strongBear =
+     bearCandidate and fullBearST and
+     regime < -(dynamicGate + 0.26) and momentum < -0.16 and efficiency > 0.42
+
+bullReady = bullPersistent or strongBull
+bearReady = bearPersistent or strongBear
+
+bullTakeover = stFastBull and (stMidBull or stSlowBull)
+bearTakeover = stFastBear and (stMidBear or stSlowBear)
+bullReady := bullReady and bullTakeover
+bearReady := bearReady and bearTakeover
+
+cooldownBars = 6 + int(math.round(chop * 4.0))
+var int trend = 0
+var int lastFlipBar = na
+barsSinceFlip = na(lastFlipBar) ? 100000 : bar_index - lastFlipBar
+cooldownDone = barsSinceFlip >= cooldownBars
+
+if barstate.isconfirmed
+    if trend != 1 and bullReady and (cooldownDone or strongBull)
+        trend := 1
+        lastFlipBar := bar_index
+        bullConfirm := 0
+        bearConfirm := 0
+        bullSTBars := 0
+        bearSTBars := 0
+    else if trend != -1 and bearReady and (cooldownDone or strongBear)
+        trend := -1
+        lastFlipBar := bar_index
+        bullConfirm := 0
+        bearConfirm := 0
+        bullSTBars := 0
+        bearSTBars := 0
+
+bullish = trend == 1
+bearish = trend == -1
+upSignal = barstate.isconfirmed and trend == 1 and trend[1] != 1
+downSignal = barstate.isconfirmed and trend == -1 and trend[1] != -1
+trendColor = bullish ? bullColor : bearish ? bearColor : neutralColor
+
+smoothBasis = smoothness > 1 ? ta.ema(basis, smoothness) : basis
+smoothATR = smoothness > 1 ? ta.ema(safeATR, smoothness) : safeATR
+
+innerDistance = 0.55 * trailSize
+outerDistance = 1.15 * trailSize
+depthDistance = 1.60 * trailSize
+
+innerTrail = bullish ? smoothBasis - smoothATR * innerDistance :
+     bearish ? smoothBasis + smoothATR * innerDistance : smoothBasis
+outerTrail = bullish ? smoothBasis - smoothATR * outerDistance :
+     bearish ? smoothBasis + smoothATR * outerDistance : smoothBasis
+depthTrail = bullish ? smoothBasis - smoothATR * depthDistance :
+     bearish ? smoothBasis + smoothATR * depthDistance : smoothBasis
+
+showTrail = overlayMode == "Trail"
+showBands = overlayMode == "Bands"
+
+// ==========================================
+// 3B. ADAPTIVE MOMENTUM BANDS - ENGINE ALTERNATIVO
+// ==========================================
+// AMB v2 (c) Uptrick - CC BY-SA 4.0
+gAmb1 = "AMB 01. Core Settings"
+ambBaseLen = input.int(8, 'Base Length', minval=2, maxval=50, group=gAmb1)
+ambAtrLen = input.int(7, 'ATR Length', minval=3, maxval=30, group=gAmb1)
+ambBandSmooth = input.int(8, 'Band Smoothing', minval=2, maxval=50, group=gAmb1)
+
+gAmb2 = "AMB 02. Band Multipliers"
+ambUpperMult = input.float(1.5, 'Upper Band Multiplier', minval=0.1, maxval=6.0, step=0.05, group=gAmb2, tooltip='Controle da banda superior (longe/estreita).')
+ambLowerMult = input.float(1.5, 'Lower Band Multiplier', minval=0.1, maxval=6.0, step=0.05, group=gAmb2, tooltip='Controle da banda inferior.')
+
+gAmb3 = "AMB 03. Adaptive Sensitivity"
+ambAdaptLen = input.int(14, 'Efficiency Period', minval=5, maxval=50, group=gAmb3)
+ambFastSmooth = input.int(2, 'Fast EMA', minval=1, maxval=5, group=gAmb3)
+ambSlowSmooth = input.int(10, 'Slow EMA', minval=3, maxval=30, group=gAmb3)
+
+gAmb4 = "AMB 04. Display"
+ambDisplayMode = input.string('Bands', 'Display Mode', options=['Bands', 'Midline Only', 'Trail'], group=gAmb4)
+ambFillTrans = input.int(85, 'Fill Opacity', minval=50, maxval=99, group=gAmb4)
+
+gAmb5 = "AMB 05. Colours"
+ambBullMain = input.color(color.new(#5CF0D7, 0), 'Bull Colour', group=gAmb5)
+ambBearMain = input.color(color.new(#B32AC3, 0), 'Bear Colour', group=gAmb5)
+
+gAmbL = "AMB 06. Signal Labels"
+ambShowLabels = input.bool(true, 'Show Labels', group=gAmbL)
+ambLabelAnchor = input.string('Main Line', 'Label Anchor', options=['High/Low', 'Main Line', 'Bands'], group=gAmbL)
+ambLabelOffsetMult = input.float(0.50, 'Offset Mult (ATR)', minval=0.0, step=0.05, group=gAmbL)
+ambLabelSize = input.string('Normal', 'Label Size', options=['Tiny', 'Small', 'Normal', 'Large'], group=gAmbL)
+
+gAmbT = "AMB 07. Status Table"
+ambShowTable = input.bool(true, 'Show Table', group=gAmbT)
+ambTblPos = input.string('Bottom Right', 'Position', options=['Top Left', 'Top Right', 'Bottom Left', 'Bottom Right'], group=gAmbT)
+ambTblTextSize = input.string('Small', 'Text Size', options=['Tiny', 'Small', 'Normal'], group=gAmbT)
+
+ambDirection = math.abs(close - close[ambAdaptLen])
+ambNoise = math.sum(math.abs(close - close[1]), ambAdaptLen)
+ambEr = ambNoise != 0 ? ambDirection / ambNoise : 0.0
+
+ambFastSC = 2.0 / (ambFastSmooth + 1)
+ambSlowSC = 2.0 / (ambSlowSmooth + 1)
+ambSc = math.pow(ambEr * (ambFastSC - ambSlowSC) + ambSlowSC, 2)
+
+var float ama1 = na
+ama1 := na(ama1[1]) ? close : ama1[1] + ambSc * (close - ama1[1])
+ama2 = ta.ema(ama1, math.max(2, int(math.round(ambBaseLen * 0.5))))
+amrLine = ta.ema(ama2, 2)
+ema2Line = ta.ema(amrLine, 2)
+
+ambAtrSmooth = ta.ema(ta.atr(ambAtrLen), ambBandSmooth)
+ambAtrNorm = ta.ema(ambAtrSmooth, ambAtrLen)
+ambVolRatio = ambAtrSmooth / ambAtrNorm
+
+ambDynMultUp = ambUpperMult * math.max(0.5, math.min(ambVolRatio, 1.8))
+ambDynMultDn = ambLowerMult * math.max(0.5, math.min(ambVolRatio, 1.8))
+
+upperBandA = ta.ema(amrLine + ambDynMultUp * ambAtrSmooth, ambBandSmooth)
+lowerBandA = ta.ema(amrLine - ambDynMultDn * ambAtrSmooth, ambBandSmooth)
+
+var bool isBullA = true
+if close > upperBandA
+    isBullA := true
+if close < lowerBandA
+    isBullA := false
+
+ambBull = isBullA
+ambBear = not isBullA
+trendColA = ambBull ? ambBullMain : ambBearMain
+
+ambIsBands = ambDisplayMode == 'Bands'
+ambIsMidline = ambDisplayMode == 'Midline Only'
+ambIsTrail = ambDisplayMode == 'Trail'
+
+trailLineA = ambBull ? lowerBandA : upperBandA
+
+lastStateA = ambBull ? 1 : -1
+ambUpSignal = barstate.isconfirmed and lastStateA == 1 and lastStateA[1] != 1
+ambDownSignal = barstate.isconfirmed and lastStateA == -1 and lastStateA[1] != -1
+
+var int prevStateA = lastStateA
+var int barsInState = 0
+if lastStateA != prevStateA
+    barsInState := 1
+else
+    barsInState += 1
+prevStateA := lastStateA
+
+f_lblSizeA(s) =>
+    s == 'Tiny'   ? size.tiny :
+     s == 'Small'  ? size.small :
+     s == 'Large'  ? size.large :
+     size.normal
+
+ambLabelOffset = ta.atr(14) * ambLabelOffsetMult
+baseLongY = ambLabelAnchor == 'High/Low' ? low :
+     ambLabelAnchor == 'Bands' ? lowerBandA : amrLine
+baseShortY = ambLabelAnchor == 'High/Low' ? high :
+     ambLabelAnchor == 'Bands' ? upperBandA : amrLine
+longY = baseLongY - ambLabelOffset
+shortY = baseShortY + ambLabelOffset
+
+// ==========================================
+// 3C. SELECAO DE ENGINE
+// ==========================================
+engineATT = engineSel == "ATT"
+bullEng = engineATT ? bullish : ambBull
+bearEng = engineATT ? bearish : ambBear
+trendEng = engineATT ? trend : (ambBull ? 1 : ambBear ? -1 : 0)
+flipUp = engineATT ? upSignal : ambUpSignal
+flipDown = engineATT ? downSignal : ambDownSignal
+engColor = engineATT ? trendColor : trendColA
+engTrail = engineATT ? outerTrail : trailLineA
+
+// ==========================================
+// 3D. GATILHO DE ENTRADA NA VIRADA + CONFIRMACAO POR VOLUME
+// ==========================================
+noGraf5m = timeframe.period == "5"
+entraSo5m = not so_5m or noGraf5m
+
+volMedio = ta.sma(volume, 20)
+surtoVol = volume >= volMedio * vol_mult
+obvSerie = ta.cum(math.sign(close - close[1]) * volume)
+obvAltaCont = ta.rising(obvSerie, obv_bars)
+obvBaixaCont = ta.falling(obvSerie, obv_bars)
+volConfAlta = not usar_vol or (surtoVol and (not usar_obv or obvAltaCont))
+volConfBaixa = not usar_vol or (surtoVol and (not usar_obv or obvBaixaCont))
+
+sinalEntrada = entradas_flip and entraSo5m
+sinalCompra = sinalEntrada and flipUp and volConfAlta
+sinalVenda = sinalEntrada and flipDown and volConfBaixa
+
+// ==========================================
+// 4. PIVOS DA CORRECAO (50% + anti-fake)
+// ==========================================
+ph_raw = ta.pivothigh(high, micro_len, micro_len)
+pl_raw = ta.pivotlow(low, micro_len, micro_len)
+
+float ph_v = na
+float pl_v = na
+
+var int miniTend = 0
+var float plPrev = na
+var float phPrev = na
+var float lastLow = na
+var float lastHigh = na
+var float loOrig = na
+var float hiOrig = na
+
+dirAlta = usar_engine_dir ? (bullEng or (trendEng == 0 and miniTend == 1)) : miniTend == 1
+dirBaixa = usar_engine_dir ? (bearEng or (trendEng == 0 and miniTend == -1)) : miniTend == -1
+
+if not na(pl_raw)
+    if not na(plPrev)
+        miniTend := pl_raw > plPrev ? 1 : pl_raw < plPrev ? -1 : miniTend
+    plPrev := pl_raw
+    lastLow := pl_raw
+    if not na(lastHigh)
+        loOrig := lastHigh
+    if dirAlta and not na(lastHigh) and not na(hiOrig)
+        impUp = lastHigh - hiOrig
+        if impUp > 0 and lastHigh - pl_raw >= 0.5 * impUp
+            pl_v := pl_raw
+
+if not na(ph_raw)
+    if not na(phPrev)
+        miniTend := ph_raw > phPrev ? 1 : ph_raw < phPrev ? -1 : miniTend
+    phPrev := ph_raw
+    lastHigh := ph_raw
+    if not na(lastLow)
+        hiOrig := lastLow
+    if dirBaixa and not na(lastLow) and not na(loOrig)
+        impDown = loOrig - lastLow
+        if impDown > 0 and ph_raw - lastLow >= 0.5 * impDown
+            ph_v := ph_raw
+
+var line[] tpLinhas = array.new_line(0)
+var float[] tpNiveis = array.new_float(0)
+var int[] tpCont = array.new_int(0)
+var line[] fdLinhas = array.new_line(0)
+var float[] fdNiveis = array.new_float(0)
+var int[] fdCont = array.new_int(0)
+
+if not na(ph_v)
+    array.push(tpLinhas, line.new(x1=bar_index - micro_len, y1=ph_v, x2=bar_index - micro_len + 20, y2=ph_v,
+         color=color.new(color.red, 0), style=line.style_dashed, width=2))
+    array.push(tpNiveis, ph_v)
+    array.push(tpCont, 0)
+
+if not na(pl_v)
+    array.push(fdLinhas, line.new(x1=bar_index - micro_len, y1=pl_v, x2=bar_index - micro_len + 20, y2=pl_v,
+         color=color.new(color.green, 0), style=line.style_dashed, width=2))
+    array.push(fdNiveis, pl_v)
+    array.push(fdCont, 0)
+
+if array.size(tpLinhas) > 0
+    for i = array.size(tpLinhas) - 1 to 0
+        if close > array.get(tpNiveis, i)
+            array.set(tpCont, i, array.get(tpCont, i) + 1)
+            if array.get(tpCont, i) >= confirm_velas
+                line.delete(array.get(tpLinhas, i))
+                array.remove(tpLinhas, i)
+                array.remove(tpNiveis, i)
+                array.remove(tpCont, i)
+        else
+            array.set(tpCont, i, 0)
+
+if array.size(fdLinhas) > 0
+    for i = array.size(fdLinhas) - 1 to 0
+        if close < array.get(fdNiveis, i)
+            array.set(fdCont, i, array.get(fdCont, i) + 1)
+            if array.get(fdCont, i) >= confirm_velas
+                line.delete(array.get(fdLinhas, i))
+                array.remove(fdLinhas, i)
+                array.remove(fdNiveis, i)
+                array.remove(fdCont, i)
+        else
+            array.set(fdCont, i, 0)
+
+// ==========================================
+// 5. ZONAS DE ORDER BLOCK E FVG (opcionais)
+// ==========================================
+var box[] obBoxes  = array.new_box(0)
+var int[] obBars   = array.new_int(0)
+var int[] obTipo   = array.new_int(0)
+var box[] fvgBoxes = array.new_box(0)
+var int[] fvgBars  = array.new_int(0)
+var int[] fvgTipo  = array.new_int(0)
+
+corpoMedio = ta.sma(math.abs(close - open), 20)
+velaBaixa1 = close[1] < open[1]
+velaAlta1  = close[1] > open[1]
+rompeuAltaForte  = close > ta.highest(high[1], 5) and (close - open) > corpoMedio * obImpulseMult
+rompeuBaixaForte = close < ta.lowest(low[1], 5) and (open - close) > corpoMedio * obImpulseMult
+
+criarOB(cond, tipo, cor, borda) =>
+    if mostrarOB and cond
+        array.push(obBoxes, box.new(left=bar_index[1], top=high[1], bottom=low[1], right=bar_index + 1,
+             bgcolor=cor, border_color=borda, border_width=1, extend=extend.right))
+        array.push(obBars, bar_index)
+        array.push(obTipo, tipo)
+
+criarFVG(cond, topo, baixo, tipo, cor, borda) =>
+    if mostrarFVG and cond
+        array.push(fvgBoxes, box.new(left=bar_index[2], top=topo, bottom=baixo, right=bar_index + 1,
+             bgcolor=cor, border_color=borda, border_width=1, extend=extend.right))
+        array.push(fvgBars, bar_index)
+        array.push(fvgTipo, tipo)
+
+criarOB(velaBaixa1 and rompeuAltaForte, 1, corOBBull, color.new(color.teal, 40))
+criarOB(velaAlta1 and rompeuBaixaForte, -1, corOBBear, color.new(color.maroon, 40))
+criarFVG(low > high[2], low, high[2], 1, corFVGBull, color.new(color.blue, 50))
+criarFVG(high < low[2], low[2], high, -1, corFVGBear, color.new(color.orange, 50))
+
+mitigarZonas(boxes, bars, tipos) =>
+    if array.size(boxes) > 0
+        for i = array.size(boxes) - 1 to 0
+            bx = array.get(boxes, i)
+            if bar_index > array.get(bars, i)
+                t = box.get_top(bx)
+                btm = box.get_bottom(bx)
+                tocou = mitigacaoPorFechamento ? (close <= t and close >= btm) : (high >= btm and low <= t)
+                if tocou
+                    box.delete(bx)
+                    array.remove(boxes, i)
+                    array.remove(bars, i)
+                    array.remove(tipos, i)
+
+mitigarZonas(obBoxes, obBars, obTipo)
+mitigarZonas(fvgBoxes, fvgBars, fvgTipo)
+
+// ==========================================
+// 6. VISUAL - SETUP H1 + PIVOS
+// ==========================================
+pTop = plot(not na(h1_topo) ? h1_topo : na, "Topo setup (H1)", color=color.new(color.red, 25), linewidth=2, style=plot.style_stepline)
+pFnd = plot(not na(h1_fundo) ? h1_fundo : na, "Fundo setup (H1)", color=color.new(color.green, 25), linewidth=2, style=plot.style_stepline)
+fill(pTop, pFnd, color=color.new(color.blue, 97))
+plot(not na(nivel_50) ? nivel_50 : na, "Nivel 50% (H1)", color=color.new(color.orange, 35), linewidth=2, style=plot.style_linebr)
+plot(ver_ema200 and not na(h1_ema) ? h1_ema : na, "EMA 200 (H1)", color=color.new(color.navy, 25), linewidth=2, style=plot.style_linebr)
+
+// (pivos validos: apenas as linhas pontilhadas, sem bolinhas)
+
+// ==========================================
+// 7. ADAPTIVE TREND TRAIL - VISUAL
+// ==========================================
+pTrailInner = plot(showTrail and engineATT ? innerTrail : na, "Trail Inner", color=color.new(engColor, 100))
+pTrailOuter = plot(showTrail and engineATT ? outerTrail : na, "Trail Outer", color=color.new(engColor, 100))
+pTrailDepth = plot(showTrail and engineATT ? depthTrail : na, "Trail Depth", color=color.new(engColor, 100))
+fill(pTrailInner, pTrailOuter, color=engineATT ? color.new(trendColor, 68) : na, title="Adaptive Trend Trail")
+fill(pTrailOuter, pTrailDepth, color=engineATT ? color.new(trendColor, 87) : na, title="Trail Depth")
+
+bandBasis = ta.ema(smoothBasis, smoothness)
+bandATR = ta.ema(smoothATR, smoothness)
+upper1 = bandBasis + bandATR * 1.30 * trailSize
+upper2 = bandBasis + bandATR * 2.00 * trailSize
+upper3 = bandBasis + bandATR * 2.90 * trailSize
+lower1 = bandBasis - bandATR * 1.30 * trailSize
+lower2 = bandBasis - bandATR * 2.00 * trailSize
+lower3 = bandBasis - bandATR * 2.90 * trailSize
+
+pU1 = plot(showBands and engineATT ? upper1 : na, "Upper Band 1", color=color.new(bearColor, 100))
+pU2 = plot(showBands and engineATT ? upper2 : na, "Upper Band 2", color=color.new(bearColor, 100))
+pU3 = plot(showBands and engineATT ? upper3 : na, "Upper Band 3", color=color.new(bearColor, 100))
+pL1 = plot(showBands and engineATT ? lower1 : na, "Lower Band 1", color=color.new(bullColor, 100))
+pL2 = plot(showBands and engineATT ? lower2 : na, "Lower Band 2", color=color.new(bullColor, 100))
+pL3 = plot(showBands and engineATT ? lower3 : na, "Lower Band 3", color=color.new(bullColor, 100))
+
+fill(pU1, pU2, color=engineATT ? color.new(bearColor, 91) : na, title="Upper Inner Band")
+fill(pU2, pU3, color=engineATT ? color.new(bearColor, 72) : na, title="Upper Outer Band")
+fill(pL1, pL2, color=engineATT ? color.new(bullColor, 91) : na, title="Lower Inner Band")
+fill(pL2, pL3, color=engineATT ? color.new(bullColor, 72) : na, title="Lower Outer Band")
+
+signalPadding = smoothATR * 1.05
+if engineATT and flipUp
+    label.new(bar_index, outerTrail - signalPadding, "U p",
+         style=label.style_label_up, color=bullColor, textcolor=black, size=size.normal)
+if engineATT and flipDown
+    label.new(bar_index, outerTrail + signalPadding, "D o w n",
+         style=label.style_label_down, color=bearColor, textcolor=white, size=size.normal)
+
+candleOffColor = color.new(color.black, 100)
+plotcandle(open, high, low, close, "Trend Candles",
+     color=colorir_velas ? engColor : candleOffColor, wickcolor=colorir_velas ? engColor : candleOffColor, bordercolor=colorir_velas ? engColor : candleOffColor)
+
+// ---------- VALUATION METER (OPCIONAL) ----------
+valuation = f_clamp(ta.ema(ta.rsi(close, 14), 3), 0.0, 100.0)
+showMeter = meterMode != "Off"
+meterSegments = meterMode == "Compact" ? 11 : meterMode == "Large" ? 25 : 17
+meterColumns = meterSegments + 2
+centerColumn = int(math.floor((meterColumns - 1) / 2))
+meterTextSize = meterMode == "Large" ? size.normal : meterMode == "Compact" ? size.tiny : size.small
+pointerSize = meterMode == "Large" ? size.large : meterMode == "Compact" ? size.small : size.normal
+
+var table valuationMeter = table.new(
+     f_position(meterPosition), meterColumns, 3,
+     bgcolor=black, frame_color=white, frame_width=1, border_color=black, border_width=0)
+
+if showMeter and barstate.islast
+    table.clear(valuationMeter, 0, 0, meterColumns - 1, 2)
+    int pointerIndex = int(math.round(valuation / 100.0 * (meterSegments - 1)))
+    for i = 0 to meterColumns - 1
+        table.cell(valuationMeter, i, 0, "", bgcolor=black)
+    table.cell(valuationMeter, centerColumn, 0, "VALUATION", text_color=white, bgcolor=black, text_size=meterTextSize, text_halign=text.align_center)
+    for i = 0 to meterSegments - 1
+        bool pointer = i == pointerIndex
+        string dot = i == 0 or i == meterSegments - 1 ? "•" : "·"
+        table.cell(valuationMeter, i + 1, 1, dot, text_color=color.new(white, 30), bgcolor=black, text_size=meterTextSize, text_halign=text.align_center)
+        table.cell(valuationMeter, i + 1, 2, pointer ? "▲" : "", text_color=white, bgcolor=black, text_size=pointerSize, text_halign=text.align_center)
+        table.cell_set_text_font_family(valuationMeter, i + 1, 1, font.family_monospace)
+        table.cell_set_text_font_family(valuationMeter, i + 1, 2, font.family_monospace)
+
+if not showMeter and barstate.islast
+    table.clear(valuationMeter, 0, 0, meterColumns - 1, 2)
+
+// ---------- SIMULACAO INTERNA (DATA WINDOW) ----------
+var float equity = 10000.0
+var float equityPeak = 10000.0
+var float maxDrawdown = 0.0
+var int simSide = 0
+var int entryBar = na
+var float entryPrice = na
+var float entryEquity = na
+var float stopPrice = na
+var float tradePnL = 0.0
+var int closedTrades = 0
+var int winningTrades = 0
+var float grossProfit = 0.0
+var float grossLoss = 0.0
+
+if simSide != 0 and bar_index > entryBar
+    float candidateStop = engTrail[1]
+    if simSide == 1 and not na(candidateStop)
+        stopPrice := math.max(stopPrice, candidateStop)
+    if simSide == -1 and not na(candidateStop)
+        stopPrice := math.min(stopPrice, candidateStop)
+
+if simSide != 0 and bar_index > entryBar
+    bool stopHit = simSide == 1 ? low <= stopPrice : high >= stopPrice
+    bool reversal = simSide == 1 ? flipDown : flipUp
+    float exitPrice = stopHit ? stopPrice : reversal ? close : na
+    if not na(exitPrice)
+        float result = f_tradePnl(simSide, entryPrice, exitPrice, entryEquity)
+        equity += result
+        tradePnL += result
+        closedTrades += 1
+        if tradePnL > 0.0
+            winningTrades += 1
+            grossProfit += tradePnL
+        else if tradePnL < 0.0
+            grossLoss += tradePnL
+        simSide := 0
+        entryBar := na
+        entryPrice := na
+        entryEquity := na
+        stopPrice := na
+        tradePnL := 0.0
+
+if simSide == 0 and flipUp
+    simSide := 1
+    entryBar := bar_index
+    entryPrice := close
+    entryEquity := equity
+    stopPrice := math.min(engTrail, close - syminfo.mintick)
+    float fee = entryEquity * 0.001
+    equity -= fee
+    tradePnL := -fee
+else if simSide == 0 and flipDown
+    simSide := -1
+    entryBar := bar_index
+    entryPrice := close
+    entryEquity := equity
+    stopPrice := math.max(engTrail, close + syminfo.mintick)
+    float fee = entryEquity * 0.001
+    equity -= fee
+    tradePnL := -fee
+
+float unrealized = 0.0
+if simSide != 0 and not na(entryPrice)
+    unrealized := entryEquity * simSide * ((close - entryPrice) / entryPrice)
+
+liveEquity = equity + unrealized
+equityPeak := math.max(equityPeak, liveEquity)
+float currentDD = equityPeak > 0.0 ? (equityPeak - liveEquity) / equityPeak : 0.0
+maxDrawdown := math.max(maxDrawdown, currentDD)
+
+backtestReturn = (liveEquity / 10000.0 - 1.0) * 100.0
+winRate = closedTrades > 0 ? winningTrades / closedTrades * 100.0 : na
+profitFactor = grossLoss < 0.0 ? grossProfit / math.abs(grossLoss) : na
+
+plot(backtestReturn, "Internal Return %", display=display.data_window)
+plot(winRate, "Internal Win Rate %", display=display.data_window)
+plot(profitFactor, "Internal Profit Factor", display=display.data_window)
+plot(maxDrawdown * 100.0, "Internal Max Drawdown %", display=display.data_window)
+plot(closedTrades, "Internal Closed Trades", display=display.data_window)
+
+// ==========================================
+// 8. ADAPTIVE MOMENTUM BANDS - VISUAL + TABELA
+// ==========================================
+pUpA = plot(not engineATT and ambIsBands ? upperBandA : na, 'AMB Upper Band', color=color.new(trendColA, 45), linewidth=1)
+pLoA = plot(not engineATT and ambIsBands ? lowerBandA : na, 'AMB Lower Band', color=color.new(trendColA, 45), linewidth=1)
+
+pMidA = plot(not engineATT and not ambIsTrail ? amrLine : na, 'AMR Midline', color=trendColA, linewidth=2)
+pEma2A = plot(not engineATT and not ambIsTrail ? ema2Line : na, 'EMA2 of Midline', color=color.new(trendColA, 55), linewidth=1)
+pMidA1 = plot(not engineATT and not ambIsTrail ? amrLine : na, 'AMR Glow', color=color.new(trendColA, 70), linewidth=10)
+pEma21A = plot(not engineATT and not ambIsTrail ? ema2Line : na, 'EMA2 Glow', color=color.new(trendColA, 70), linewidth=10)
+
+pTrA = plot(not engineATT and ambIsTrail ? trailLineA : na, 'AMB Trail', color=trendColA, linewidth=2)
+pMidTrA = plot(not engineATT and ambIsTrail ? amrLine : na, 'Midline (trail)', color=color.new(trendColA, 60), linewidth=1)
+
+fill(pUpA, pLoA, color=not engineATT and ambIsBands ? color.new(trendColA, ambFillTrans) : na, title='AMB Band Fill')
+fill(pMidA, pEma2A, color=not engineATT and not ambIsTrail ? color.new(trendColA, 0) : na, title='AMB Midline Ribbon')
+fill(pTrA, pMidTrA, top_value=not engineATT and ambIsTrail ? (ambBull ? amrLine : trailLineA) : na, bottom_value=not engineATT and ambIsTrail ? (ambBull ? trailLineA : amrLine) : na, top_color=not engineATT and ambIsTrail ? (ambBull ? color.new(trendColA, 100) : color.new(trendColA, 70)) : na, bottom_color=not engineATT and ambIsTrail ? (ambBull ? color.new(trendColA, 70) : color.new(trendColA, 100)) : na, title='AMB Trail Gradient')
+
+barcolor(not engineATT and colorir_velas ? color.new(trendColA, 0) : na)
+
+if not engineATT and ambShowLabels
+    if ambUpSignal
+        label.new(bar_index, longY, 'COMPRA', style=label.style_label_up, color=ambBullMain, textcolor=color.black, size=f_lblSizeA(ambLabelSize))
+    if ambDownSignal
+        label.new(bar_index, shortY, 'VENDA', style=label.style_label_down, color=ambBearMain, textcolor=color.white, size=f_lblSizeA(ambLabelSize))
+
+// --- ENTRADAS: virada de tendencia + volume (so 5m) ---
+if sinalCompra
+    label.new(bar_index, low - safeATR * 0.6, "ENTRADA", style=label.style_label_up, color=color.new(color.green, 0), textcolor=color.white, size=size.small)
+if sinalVenda
+    label.new(bar_index, high + safeATR * 0.6, "ENTRADA", style=label.style_label_down, color=color.new(color.red, 0), textcolor=color.white, size=size.small)
+
+f_ambPos(p) =>
+    p == 'Top Left' ? position.top_left :
+     p == 'Top Right' ? position.top_right :
+     p == 'Bottom Left' ? position.bottom_left :
+     position.bottom_right
+
+f_ambTxt(s) =>
+    s == 'Tiny' ? size.tiny :
+     s == 'Normal' ? size.normal :
+     size.small
+
+float ambRoc1 = ta.roc(close, 1)
+float ambRoc5 = ta.roc(close, 5)
+float ambRoc20 = ta.roc(close, 20)
+float ambErPct = math.round(ambEr * 100, 1)
+float ambBWidth = amrLine != 0.0 ? math.round((upperBandA - lowerBandA) / amrLine * 100, 2) : na
+float ambDistMid = amrLine != 0.0 ? math.round((close - amrLine) / amrLine * 100, 2) : na
+float ambAtrVal = math.round(ambAtrSmooth, 2)
+
+AMB_BLK = #0a0a0a
+AMB_DGRY = color.new(color.gray, 55)
+AMB_LGRY = color.new(color.gray, 25)
+AMB_WHT = #e8e8e8
+AMB_ACC = ambBull ? ambBullMain : ambBearMain
+
+f_ambValCol(v) => v > 0 ? ambBullMain : ambBearMain
+f_ambFmt(v, suf) => str.tostring(math.round(v, 2)) + suf
+
+var table ambTbl = table.new(f_ambPos(ambTblPos), 2, 11,
+     bgcolor=color.new(AMB_BLK, 5), border_color=color.new(color.gray, 60),
+     frame_color=color.new(color.gray, 45), frame_width=1, border_width=1)
+
+if not engineATT and ambShowTable and (barstate.islastconfirmedhistory or barstate.isrealtime)
+    sz = f_ambTxt(ambTblTextSize)
+    table.cell(ambTbl, 0, 0, 'AMB v2 · Status', text_color=AMB_ACC, bgcolor=color.new(AMB_BLK, 0), text_halign=text.align_center, text_size=sz, text_font_family=font.family_monospace)
+    table.merge_cells(ambTbl, 0, 0, 1, 0)
+
+    trendStrA = ambBull ? '▲ ALTA' : '▼ BAIXA'
+    trendCA = ambBull ? ambBullMain : ambBearMain
+    table.cell(ambTbl, 0, 1, 'Tendencia', text_color=AMB_LGRY, bgcolor=color.new(trendCA, 90), text_halign=text.align_left, text_size=sz, text_font_family=font.family_monospace)
+    table.cell(ambTbl, 1, 1, trendStrA, text_color=trendCA, bgcolor=color.new(trendCA, 90), text_halign=text.align_right, text_size=sz, text_font_family=font.family_monospace)
+
+    table.cell(ambTbl, 0, 2, 'Barras na Tend.', text_color=AMB_LGRY, bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_left, text_size=sz, text_font_family=font.family_monospace)
+    table.cell(ambTbl, 1, 2, str.tostring(barsInState), text_color=AMB_WHT, bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_right, text_size=sz, text_font_family=font.family_monospace)
+
+    ambErC = ambErPct > 60 ? ambBullMain : ambErPct > 35 ? color.orange : ambBearMain
+    table.cell(ambTbl, 0, 3, 'Eficiencia %', text_color=AMB_LGRY, bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_left, text_size=sz, text_font_family=font.family_monospace)
+    table.cell(ambTbl, 1, 3, f_ambFmt(ambErPct, '%'), text_color=ambErC, bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_right, text_size=sz, text_font_family=font.family_monospace)
+
+    ambBwC = na(ambBWidth) ? AMB_LGRY : ambBWidth > 5.0 ? ambBearMain : ambBullMain
+    table.cell(ambTbl, 0, 4, 'Larg. Banda %', text_color=AMB_LGRY, bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_left, text_size=sz, text_font_family=font.family_monospace)
+    table.cell(ambTbl, 1, 4, na(ambBWidth) ? '—' : f_ambFmt(ambBWidth, '%'), text_color=ambBwC, bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_right, text_size=sz, text_font_family=font.family_monospace)
+
+    ambDmC = na(ambDistMid) ? AMB_LGRY : ambDistMid > 0 ? ambBullMain : ambBearMain
+    table.cell(ambTbl, 0, 5, 'Dist. Linha %', text_color=AMB_LGRY, bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_left, text_size=sz, text_font_family=font.family_monospace)
+    table.cell(ambTbl, 1, 5, na(ambDistMid) ? '—' : f_ambFmt(ambDistMid, '%'), text_color=ambDmC, bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_right, text_size=sz, text_font_family=font.family_monospace)
+
+    table.cell(ambTbl, 0, 6, 'ATR (suav.)', text_color=AMB_LGRY, bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_left, text_size=sz, text_font_family=font.family_monospace)
+    table.cell(ambTbl, 1, 6, str.tostring(ambAtrVal), text_color=AMB_WHT, bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_right, text_size=sz, text_font_family=font.family_monospace)
+
+    table.cell(ambTbl, 0, 7, 'ROC 1 barra', text_color=AMB_LGRY, bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_left, text_size=sz, text_font_family=font.family_monospace)
+    table.cell(ambTbl, 1, 7, f_ambFmt(math.round(ambRoc1, 2), '%'), text_color=f_ambValCol(ambRoc1), bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_right, text_size=sz, text_font_family=font.family_monospace)
+
+    table.cell(ambTbl, 0, 8, 'ROC 5 barras', text_color=AMB_LGRY, bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_left, text_size=sz, text_font_family=font.family_monospace)
+    table.cell(ambTbl, 1, 8, f_ambFmt(math.round(ambRoc5, 2), '%'), text_color=f_ambValCol(ambRoc5), bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_right, text_size=sz, text_font_family=font.family_monospace)
+
+    table.cell(ambTbl, 0, 9, 'ROC 20 barras', text_color=AMB_LGRY, bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_left, text_size=sz, text_font_family=font.family_monospace)
+    table.cell(ambTbl, 1, 9, f_ambFmt(math.round(ambRoc20, 2), '%'), text_color=f_ambValCol(ambRoc20), bgcolor=color.new(AMB_BLK, 20), text_halign=text.align_right, text_size=sz, text_font_family=font.family_monospace)
+
+    multStr = '↑ ' + str.tostring(ambUpperMult) + '  ↓ ' + str.tostring(ambLowerMult)
+    table.cell(ambTbl, 0, 10, 'Mults  Cim/Baix', text_color=AMB_DGRY, bgcolor=color.new(AMB_BLK, 5), text_halign=text.align_left, text_size=sz, text_font_family=font.family_monospace)
+    table.cell(ambTbl, 1, 10, multStr, text_color=AMB_ACC, bgcolor=color.new(AMB_BLK, 5), text_halign=text.align_right, text_size=sz, text_font_family=font.family_monospace)
+
+// ==========================================
+// 9. ALERTS
+// ==========================================
+alertcondition(flipUp, "Tendencia Alta (ATT/AMB)", "Tendencia virou ALTA no {{ticker}}")
+alertcondition(flipDown, "Tendencia Baixa (ATT/AMB)", "Tendencia virou BAIXA no {{ticker}}")
+alertcondition(sinalCompra, "ENTRADA COMPRA", "Sinal de ENTRADA COMPRA no {{ticker}} (virada p/ alta + volume)")
+alertcondition(sinalVenda, "ENTRADA VENDA", "Sinal de ENTRADA VENDA no {{ticker}} (virada p/ baixa + volume)")

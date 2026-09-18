@@ -1,0 +1,6 @@
+{
+  "top_keys": [
+    "__ngContext__"
+  ],
+  "game_type": "HTMLDivElement"
+}

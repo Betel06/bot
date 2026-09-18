@@ -1,0 +1,91 @@
+{
+  "window_game": true,
+  "window_game_type": "object",
+  "phaser_game": false,
+  "game_keys": [
+    "ongamepadconnected:object",
+    "ongamepaddisconnected:object"
+  ],
+  "angular": [
+    "ng-found"
+  ],
+  "canvas_found": true,
+  "canvas_w": 88,
+  "canvas_h": 88,
+  "canvas_keys": [],
+  "game_shell_ng": [
+    "__ngContext__"
+  ],
+  "hp_mp_spans": [
+    {
+      "cls": "",
+      "text": "0/580",
+      "style_width": "",
+      "computed_width": "206px",
+      "transform": "none"
+    },
+    {
+      "cls": "hud-regen",
+      "text": "+10",
+      "style_width": "",
+      "computed_width": "15px",
+      "transform": "none"
+    },
+    {
+      "cls": "",
+      "text": "450/455",
+      "style_width": "",
+      "computed_width": "206px",
+      "transform": "none"
+    },
+    {
+      "cls": "hud-shield",
+      "text": "",
+      "style_width": "",
+      "computed_width": "auto",
+      "transform": "none"
+    },
+    {
+      "cls": "hud-regen",
+      "text": "+10",
+      "style_width": "",
+      "computed_width": "15px",
+      "transform": "none"
+    },
+    {
+      "cls": "",
+      "text": "0/580",
+      "style_width": "",
+      "computed_width": "auto",
+      "transform": "none"
+    },
+    {
+      "cls": "hud-regen",
+      "text": "+10",
+      "style_width": "",
+      "computed_width": "auto",
+      "transform": "none"
+    },
+    {
+      "cls": "",
+      "text": "450/455",
+      "style_width": "",
+      "computed_width": "auto",
+      "transform": "none"
+    },
+    {
+      "cls": "hud-shield",
+      "text": "",
+      "style_width": "",
+      "computed_width": "auto",
+      "transform": "none"
+    },
+    {
+      "cls": "hud-regen",
+      "text": "+10",
+      "style_width": "",
+      "computed_width": "auto",
+      "transform": "none"
+    }
+  ]
+}

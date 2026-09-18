@@ -1,0 +1,42 @@
+[
+  {
+    "tag": "DIV",
+    "text": "Sua contaEscolha seu personagemdanielkjk512@gmail.com",
+    "x": 469,
+    "y": 252,
+    "w": 280,
+    "h": 78
+  },
+  {
+    "tag": "DIV",
+    "text": "EnglishPortuguês Alertas Sair da conta",
+    "x": 509,
+    "y": 323,
+    "w": 360,
+    "h": 45
+  },
+  {
+    "tag": "FORM",
+    "text": "Novo personagemCriar",
+    "x": 640,
+    "y": 544,
+    "w": 622,
+    "h": 86
+  },
+  {
+    "tag": "LABEL",
+    "text": "Novo personagem",
+    "x": 600,
+    "y": 553,
+    "w": 542,
+    "h": 67
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Criar",
+    "x": 917,
+    "y": 564,
+    "w": 68,
+    "h": 45
+  }
+]

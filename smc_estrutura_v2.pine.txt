@@ -1,0 +1,137 @@
+//@version=5
+indicator("SMC Estrutura v2 - HH/HL/LH/LL + BOS/CHoCH + Invalidação + Painel", overlay=true)
+
+// ============ INPUTS ============
+pivotLen       = input.int(10, "Sensibilidade dos pivôs (velas)", minval=1)
+pctMinimo      = input.float(0.5, "Variação mínima entre pivôs (%)", minval=0.1, step=0.1)
+corpoMinimoPct = input.float(60, "Corpo mínimo do candle (%)", minval=10, maxval=95, step=5)
+
+usarVolume   = input.bool(true,  "Filtrar BOS/CHoCH por volume")
+usarKillzone = input.bool(true,  "Filtrar por killzones (horário BRT)")
+kjInicio     = input.session("0900-1100", "Killzone manhã (BRT)")
+kjTarde      = input.session("1500-1630", "Killzone tarde (BRT)")
+pintarFundo  = input.bool(true,  "Pintar fundo pela tendência")
+
+// ============ PIVÔS ============
+swingHigh = ta.pivothigh(high, pivotLen, pivotLen)
+swingLow  = ta.pivotlow(low,  pivotLen, pivotLen)
+
+var float ultimoTopo      = na
+var float ultimoFundo     = na
+var int    ultimoTopoBar  = na
+var int    ultimoFundoBar = na
+var string tendencia      = "indefinida"
+
+pctMove(a, b) => math.abs(a - b) / b * 100
+
+corpo       = math.abs(close - open)
+candleTotal = high - low
+corpoValido = candleTotal > 0 and (corpo / candleTotal * 100) >= corpoMinimoPct
+
+corpoMedio5  = ta.sma(corpo, 5)
+deslocamento = corpoValido and not na(corpoMedio5) and corpoMedio5 > 0 and corpo >= corpoMedio5 * 1.5
+
+volMed20 = ta.sma(volume, 20)
+volAcima = not usarVolume or (not na(volMed20) and volume > volMed20)
+
+emKillzone = not usarKillzone or time(timeframe.period, kjInicio + ":1234567") or time(timeframe.period, kjTarde + ":1234567")
+
+// ============ MÉTRICAS ============
+var int qtdBOS   = 0
+var int qtdCHoCH = 0
+var int qtdHH    = 0
+var int qtdHL    = 0
+var int qtdLH    = 0
+var int qtdLL    = 0
+
+// ============ TOPOS ============
+if not na(swingHigh)
+    topoValido = na(ultimoTopo) or pctMove(swingHigh, ultimoTopo) >= pctMinimo
+    if topoValido
+        barTopo = bar_index - pivotLen
+        if not na(ultimoTopo)
+            ehHH = swingHigh > ultimoTopo
+            qtdHH := ehHH ? qtdHH + 1 : qtdHH
+            qtdLH := ehHH ? qtdLH : qtdLH + 1
+            rotulo = ehHH ? "HH" : "LH"
+            corR   = ehHH ? color.green : color.red
+            label.new(barTopo, swingHigh, rotulo, style=label.style_label_down, color=color.new(corR, 0), textcolor=color.white, size=size.small)
+        ultimoTopo    := swingHigh
+        ultimoTopoBar := barTopo
+
+// ============ FUNDOS ============
+if not na(swingLow)
+    fundoValido = na(ultimoFundo) or pctMove(swingLow, ultimoFundo) >= pctMinimo
+    if fundoValido
+        barFundo = bar_index - pivotLen
+        if not na(ultimoFundo)
+            ehHL = swingLow > ultimoFundo
+            qtdHL := ehHL ? qtdHL + 1 : qtdHL
+            qtdLL := ehHL ? qtdLL : qtdLL + 1
+            rotulo = ehHL ? "HL" : "LL"
+            corR   = ehHL ? color.green : color.red
+            label.new(barFundo, swingLow, rotulo, style=label.style_label_up, color=color.new(corR, 0), textcolor=color.white, size=size.small)
+        ultimoFundo    := swingLow
+        ultimoFundoBar := barFundo
+
+// ============ ROMPIMENTO (fechamento + corpo + volume + killzone) ============
+confirmado = barstate.isconfirmed
+
+brokeUp   = confirmado and not na(ultimoTopo) and ta.crossover(close, ultimoTopo) and corpoValido and close > open and volAcima and emKillzone
+brokeDown = confirmado and not na(ultimoFundo) and ta.crossunder(close, ultimoFundo) and corpoValido and close < open and volAcima and emKillzone
+
+if brokeUp
+    ehReversao = tendencia != "alta"
+    qtdBOS   := ehReversao ? qtdBOS   : qtdBOS + 1
+    qtdCHoCH := ehReversao ? qtdCHoCH + 1 : qtdCHoCH
+    rotulo = ehReversao ? (deslocamento ? "MSS" : "CHoCH") : "BOS"
+    corR   = ehReversao ? color.lime : color.green
+    label.new(bar_index, high, rotulo, style=label.style_label_down, color=color.new(corR, 0), textcolor=color.black, size=size.normal)
+    if ehReversao
+        tendencia := "alta"
+
+if brokeDown
+    ehReversao = tendencia != "baixa"
+    qtdBOS   := ehReversao ? qtdBOS   : qtdBOS + 1
+    qtdCHoCH := ehReversao ? qtdCHoCH + 1 : qtdCHoCH
+    rotulo = ehReversao ? (deslocamento ? "MSS" : "CHoCH") : "BOS"
+    corR   = ehReversao ? color.orange : color.red
+    label.new(bar_index, low, rotulo, style=label.style_label_up, color=color.new(corR, 0), textcolor=color.black, size=size.normal)
+    if ehReversao
+        tendencia := "baixa"
+
+// ============ LINHA DE INVALIDAÇÃO (set_xy) ============
+var line linhaInv = na
+if na(linhaInv)
+    linhaInv := line.new(na, na, na, na, color=color.orange, width=2, extend=extend.right, style=line.style_dashed)
+
+if tendencia == "alta" and not na(ultimoFundo)
+    line.set_xy1(linhaInv, ultimoFundoBar, ultimoFundo)
+    line.set_xy2(linhaInv, bar_index, ultimoFundo)
+if tendencia == "baixa" and not na(ultimoTopo)
+    line.set_xy1(linhaInv, ultimoTopoBar, ultimoTopo)
+    line.set_xy2(linhaInv, bar_index, ultimoTopo)
+if tendencia == "indefinida" and not na(linhaInv)
+    line.set_xy1(linhaInv, na, na)
+    line.set_xy2(linhaInv, na, na)
+
+// ============ FUNDO DE TENDÊNCIA ============
+corFundo = pintarFundo ? (tendencia == "alta" ? color.new(color.green, 95) : tendencia == "baixa" ? color.new(color.red, 95) : na) : na
+bgcolor(corFundo)
+
+// ============ PAINEL DE MÉTRICAS ============
+var table painel = table.new(position.top_right, 2, 7, border_color=color.gray, bgcolor=color.new(color.black, 20))
+table.cell(painel, 0, 0, "Setup", text_color=color.white, text_size=size.small, bgcolor=color.new(color.gray, 50))
+table.cell(painel, 1, 0, "Qtde",  text_color=color.white, text_size=size.small, bgcolor=color.new(color.gray, 50))
+table.cell(painel, 0, 1, "BOS",   text_color=color.green)
+table.cell(painel, 1, 1, str.tostring(qtdBOS),   text_color=color.white)
+table.cell(painel, 0, 2, "CHoCH", text_color=color.orange)
+table.cell(painel, 1, 2, str.tostring(qtdCHoCH), text_color=color.white)
+table.cell(painel, 0, 3, "HH",    text_color=color.white)
+table.cell(painel, 1, 3, str.tostring(qtdHH),    text_color=color.green)
+table.cell(painel, 0, 4, "HL",    text_color=color.white)
+table.cell(painel, 1, 4, str.tostring(qtdHL),    text_color=color.green)
+table.cell(painel, 0, 5, "LH",    text_color=color.white)
+table.cell(painel, 1, 5, str.tostring(qtdLH),    text_color=color.red)
+table.cell(painel, 0, 6, "LL",    text_color=color.white)
+table.cell(painel, 1, 6, str.tostring(qtdLL),    text_color=color.red)

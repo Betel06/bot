@@ -1,0 +1,72 @@
+[
+  {
+    "tag": "BUTTON",
+    "text": "English",
+    "classes": "",
+    "id": "",
+    "x": 330,
+    "y": 305,
+    "w": 56,
+    "h": 37
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Português",
+    "classes": "active",
+    "id": "",
+    "x": 386,
+    "y": 305,
+    "w": 73,
+    "h": 37
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Alertas",
+    "classes": "secondary",
+    "id": "",
+    "x": 468,
+    "y": 301,
+    "w": 85,
+    "h": 45
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Sair da conta",
+    "classes": "secondary",
+    "id": "",
+    "x": 561,
+    "y": 301,
+    "w": 128,
+    "h": 45
+  },
+  {
+    "tag": "BUTTON",
+    "text": "…",
+    "classes": "",
+    "id": "",
+    "x": 779,
+    "y": 412,
+    "w": 53,
+    "h": 41
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Excluir",
+    "classes": "secondary character-delete",
+    "id": "",
+    "x": 840,
+    "y": 412,
+    "w": 87,
+    "h": 41
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Criar",
+    "classes": "secondary",
+    "id": "",
+    "x": 883,
+    "y": 541,
+    "w": 68,
+    "h": 45
+  }
+]

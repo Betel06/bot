@@ -1,0 +1,275 @@
+//@version=5
+indicator("SMC 2TF: Setup H1 + Entrada no TF", overlay=true, max_boxes_count=500)
+
+// ==========================================
+// 1. CONFIG
+// ==========================================
+pivot_len = input.int(10, title="Velas p/ pivo no setup (H1, esq+dir)")
+periodo_candles = input.int(200, title="EMA/ref no setup (H1)")
+tf_setup = input.timeframe("60", title="Timeframe do setup (H1)")
+ver_ema200 = input.bool(true, title="Mostrar EMA 200 (H1)")
+
+usar_vol_filtro = input.bool(true, title="Exigir volume no CHoCH")
+vol_filtro_mult = input.float(1.2, title="Volume minimo do CHoCH (x media 20)", minval=0.0, step=0.1)
+
+usar_macd = input.bool(true, title="Confirmar reversao no 50% com MACD (macd x signal)")
+
+usar_rsi_valid = input.bool(true, title="Validar rompimento do pivo com RSI (acima/abaixo de 50)")
+rsi_len = input.int(14, title="Comprimento do RSI", minval=2, maxval=50)
+
+reteste_tol = input.float(0.15, title="Tolerancia do reteste da marca (x ATR14)", minval=0.0, step=0.05)
+
+usar_ema_filtro = input.bool(true, title="Sesgo exige preco na direcao da EMA 200 (H1)")
+perc_zona = input.int(8, title="Faixa do nivel 50 (% do range H1)", minval=2, maxval=50)
+micro_len = input.int(3, title="Pivo micro da correcao (TF do grafico)", minval=2, maxval=10)
+cooldown_velas = input.int(6, title="Velas de espera entre sinais", minval=0, maxval=20)
+armado_velas = input.int(10, title="Velas p/ entrar depois de romper o topo/fundo da correcao", minval=2, maxval=30)
+mostrar_setas = input.bool(true, title="Setas de sinal")
+
+mostrarOB = input.bool(true, title="Mostrar Order Blocks")
+mostrarFVG = input.bool(true, title="Mostrar FVGs")
+obImpulseMult = input.float(1.0, "Forca minima do candle p/ OB (x do corpo medio)", minval=0.3, step=0.1)
+mitigacaoPorFechamento = input.bool(false, "Mitigar zona so pelo fechamento (senao, pavio ja mitiga)")
+
+corOBBull  = color.new(color.teal, 75)
+corOBBear  = color.new(color.maroon, 75)
+corFVGBull = color.new(color.blue, 82)
+corFVGBear = color.new(color.orange, 82)
+
+// ==========================================
+// 2. ESTRUTURA COMPUTADA NO TIMEFRAME DE SETUP (H1)
+//    roda dentro de request.security -> vale em qualquer TF do grafico
+// ==========================================
+calc_estrutura_h1() =>
+    var string tend_h1 = "Indefinida"
+    var float ctop = na
+    var float cfund = na
+    hh = ta.highest(high, periodo_candles)
+    ll = ta.lowest(low, periodo_candles)
+    if barstate.isfirst
+        ctop := hh
+        cfund := ll
+    ph = ta.pivothigh(high, pivot_len, pivot_len)
+    pl = ta.pivotlow(low, pivot_len, pivot_len)
+    if not na(ph)
+        if tend_h1 == "Baixa"
+            meio = na(ctop) or na(cfund) ? na : (ctop + cfund) / 2
+            if na(ctop) or (not na(meio) and ph >= meio)
+                ctop := ph
+        else
+            if na(ctop) or (tend_h1 != "Alta" or ph > ctop)
+                ctop := ph
+    if not na(pl)
+        if tend_h1 == "Alta"
+            meio = na(ctop) or na(cfund) ? na : (ctop + cfund) / 2
+            if na(cfund) or (not na(meio) and pl <= meio)
+                cfund := pl
+        else
+            if na(cfund) or (tend_h1 != "Baixa" or pl < cfund)
+                cfund := pl
+    if ta.crossover(close, ctop)
+        tend_h1 := "Alta"
+    if ta.crossunder(close, cfund)
+        tend_h1 := "Baixa"
+    tendnum = tend_h1 == "Alta" ? 1 : tend_h1 == "Baixa" ? -1 : 0
+    topo = na(ctop) ? hh : ctop
+    fundo = na(cfund) ? ll : cfund
+    [topo, fundo, tendnum]
+
+[h1_topo, h1_fundo, h1_tend] = request.security(syminfo.tickerid, tf_setup, calc_estrutura_h1(), lookahead=barmerge.lookahead_off)
+h1_close = request.security(syminfo.tickerid, tf_setup, close, lookahead=barmerge.lookahead_off)
+h1_ema = request.security(syminfo.tickerid, tf_setup, ta.ema(close, periodo_candles), lookahead=barmerge.lookahead_off)
+
+nivel_50 = (h1_topo + h1_fundo) / 2
+rng_h1 = h1_topo - h1_fundo
+
+// ==========================================
+// 3. ZONAS DE ORDER BLOCK E FVG (no TF do grafico = zona de entrada)
+// ==========================================
+var box[] obBoxes  = array.new_box(0)
+var int[] obBars   = array.new_int(0)
+var int[] obTipo   = array.new_int(0)
+var box[] fvgBoxes = array.new_box(0)
+var int[] fvgBars  = array.new_int(0)
+var int[] fvgTipo  = array.new_int(0)
+
+corpoMedio = ta.sma(math.abs(close - open), 20)
+velaBaixa1 = close[1] < open[1]
+velaAlta1  = close[1] > open[1]
+rompeuAltaForte  = close > ta.highest(high[1], 5) and (close - open) > corpoMedio * obImpulseMult
+rompeuBaixaForte = close < ta.lowest(low[1], 5) and (open - close) > corpoMedio * obImpulseMult
+
+if mostrarOB and velaBaixa1 and rompeuAltaForte
+    array.push(obBoxes, box.new(left=bar_index[1], top=high[1], bottom=low[1], right=bar_index + 1,
+         bgcolor=corOBBull, border_color=color.new(color.teal, 20), border_width=1, extend=extend.right))
+    array.push(obBars, bar_index)
+    array.push(obTipo, 1)
+
+if mostrarOB and velaAlta1 and rompeuBaixaForte
+    array.push(obBoxes, box.new(left=bar_index[1], top=high[1], bottom=low[1], right=bar_index + 1,
+         bgcolor=corOBBear, border_color=color.new(color.maroon, 20), border_width=1, extend=extend.right))
+    array.push(obBars, bar_index)
+    array.push(obTipo, -1)
+
+bullishFVG = low > high[2]
+bearishFVG = high < low[2]
+
+if mostrarFVG and bullishFVG
+    array.push(fvgBoxes, box.new(left=bar_index[2], top=low, bottom=high[2], right=bar_index + 1,
+         bgcolor=corFVGBull, border_color=color.new(color.blue, 30), border_width=1, extend=extend.right))
+    array.push(fvgBars, bar_index)
+    array.push(fvgTipo, 1)
+
+if mostrarFVG and bearishFVG
+    array.push(fvgBoxes, box.new(left=bar_index[2], top=low[2], bottom=high, right=bar_index + 1,
+         bgcolor=corFVGBear, border_color=color.new(color.orange, 30), border_width=1, extend=extend.right))
+    array.push(fvgBars, bar_index)
+    array.push(fvgTipo, -1)
+
+// Mitigacao: so mitiga a partir da barra SEGUINTE a criacao
+mitigarZonas(boxes, bars, tipos) =>
+    if array.size(boxes) > 0
+        for i = array.size(boxes) - 1 to 0
+            bx = array.get(boxes, i)
+            if bar_index > array.get(bars, i)
+                t = box.get_top(bx)
+                btm = box.get_bottom(bx)
+                tocou = mitigacaoPorFechamento ? (close <= t and close >= btm) : (high >= btm and low <= t)
+                if tocou
+                    box.delete(bx)
+                    array.remove(boxes, i)
+                    array.remove(bars, i)
+                    array.remove(tipos, i)
+
+mitigarZonas(obBoxes, obBars, obTipo)
+mitigarZonas(fvgBoxes, fvgBars, fvgTipo)
+
+// ==========================================
+// 4. GATILHOS 24h - sesgo H1 + rompe pivo da correcao (RSI valida) + reteste + MACD
+// ==========================================
+// ---- correcao (tendencia menor): pivos do TF do grafico ----
+ph_m = ta.pivothigh(high, micro_len, micro_len)
+pl_m = ta.pivotlow(low, micro_len, micro_len)
+
+var float topoC = na
+var float fundoC = na
+var line liTopoC = na
+var line liFundoC = na
+var float ultTopoQuebrado = na
+var float ultFundoQuebrado = na
+if not na(ph_m)
+    topoC := ph_m
+    if not na(liTopoC)
+        line.delete(liTopoC)
+    liTopoC := line.new(x1=bar_index - micro_len, y1=ph_m, x2=bar_index - micro_len, y2=ph_m, color=color.new(color.red, 0), style=line.style_solid, width=3, extend=extend.right)
+if not na(pl_m)
+    fundoC := pl_m
+    if not na(liFundoC)
+        line.delete(liFundoC)
+    liFundoC := line.new(x1=bar_index - micro_len, y1=pl_m, x2=bar_index - micro_len, y2=pl_m, color=color.new(color.green, 0), style=line.style_solid, width=3, extend=extend.right)
+
+// rompimento CONFIRMADO por fechamento
+brokeTopoC = not na(topoC) and close > topoC
+brokeFundoC = not na(fundoC) and close < fundoC
+
+// ---- CHoCH micro (dentro da tendencia menor): exige topo E fundo da correcao ----
+temCorrecao = not na(topoC) and not na(fundoC)
+
+if brokeTopoC
+    ultTopoQuebrado := topoC
+    line.delete(liTopoC)
+    liTopoC := na
+    topoC := na
+if brokeFundoC
+    ultFundoQuebrado := fundoC
+    line.delete(liFundoC)
+    liFundoC := na
+    fundoC := na
+
+// ---- marcas acompanham o candle atual (ate a marca ser rompida) ----
+if not na(liTopoC)
+    line.set_x2(liTopoC, bar_index)
+if not na(liFundoC)
+    line.set_x2(liFundoC, bar_index)
+
+// ---- reteste: preco volta na marca rompida e fecha no lado da quebra ----
+atrV = ta.atr(14)
+var float topoRote = na
+var float fundoRote = na
+retesteLongo = not na(topoRote) and low <= topoRote + atrV * reteste_tol and close > topoRote
+retesteCurto = not na(fundoRote) and high >= fundoRote - atrV * reteste_tol and close < fundoRote
+
+// ---- confirmacao de reversao (MACD mais cedo: linha MACD cruza a signal) ----
+[macdLine, signalLine, macdHist] = ta.macd(close, 12, 26, 9)
+revLong = ta.crossover(macdLine, signalLine)
+revShort = ta.crossunder(macdLine, signalLine)
+
+// validacao do rompimento do pivo (RSI)
+rsiV = ta.rsi(close, rsi_len)
+rsiAlta = rsiV >= 50
+rsiBaixa = rsiV <= 50
+
+volumeMedio = ta.sma(volume, 20)
+volumeForte = volume >= volumeMedio * vol_filtro_mult
+
+sesgoLongo = h1_tend == 1 and (not usar_ema_filtro or h1_close > h1_ema)
+sesgoCurto = h1_tend == -1 and (not usar_ema_filtro or h1_close < h1_ema)
+
+// ---- armado: rompeu a marca -> espera o RETESTE dela dentro de ate N velas ----
+var int armadoLong = 0
+var int armadoShort = 0
+
+condLongo = sesgoLongo and armadoLong > 0 and retesteLongo and (not usar_macd or revLong) and (not usar_vol_filtro or volumeForte)
+condCurto = sesgoCurto and armadoShort > 0 and retesteCurto and (not usar_macd or revShort) and (not usar_vol_filtro or volumeForte)
+
+if temCorrecao and brokeTopoC and not brokeFundoC and (not usar_rsi_valid or rsiAlta)
+    armadoLong := armado_velas
+    armadoShort := 0
+    topoRote := ultTopoQuebrado
+else if temCorrecao and brokeFundoC and not brokeTopoC and (not usar_rsi_valid or rsiBaixa)
+    armadoShort := armado_velas
+    armadoLong := 0
+    fundoRote := ultFundoQuebrado
+else if brokeFundoC
+    armadoLong := 0
+    topoRote := na
+else if brokeTopoC
+    armadoShort := 0
+    fundoRote := na
+else
+    armadoLong := armadoLong > 0 ? armadoLong - 1 : 0
+    armadoShort := armadoShort > 0 ? armadoShort - 1 : 0
+    if armadoLong == 0
+        topoRote := na
+    if armadoShort == 0
+        fundoRote := na
+
+var int delaySinal = 0
+delaySinal := delaySinal + 1
+gatLongo = delaySinal >= cooldown_velas and condLongo and not condLongo[1]
+gatCurto = delaySinal >= cooldown_velas and condCurto and not condCurto[1]
+if gatLongo or gatCurto
+    delaySinal := 0
+
+// ---- stop do movimento: LONG usa o ultimo fundo / SHORT usa o ultimo topo da correcao ----
+stopLong = na(fundoC) ? low : fundoC
+stopShort = na(topoC) ? high : topoC
+
+// ==========================================
+// 5. VISUAL - setup H1 + sinais
+// ==========================================
+plot(not na(h1_topo) ? h1_topo : na, "Topo setup (H1)", color=color.new(color.red, 30), linewidth=2, style=plot.style_stepline)
+plot(not na(h1_fundo) ? h1_fundo : na, "Fundo setup (H1)", color=color.new(color.green, 30), linewidth=2, style=plot.style_stepline)
+plot(not na(nivel_50) ? nivel_50 : na, "Nivel 50% (H1)", color=color.new(color.orange, 70), linewidth=2, style=plot.style_linebr)
+plot(ver_ema200 and not na(h1_ema) ? h1_ema : na, "EMA 200 (H1)", color=color.new(color.blue, 40), linewidth=2, style=plot.style_linebr)
+
+plotshape(mostrar_setas and gatLongo, "Sinal LONG", style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 0), size=size.small, text="LONG")
+plotshape(mostrar_setas and gatCurto, "Sinal SHORT", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small, text="SHORT")
+
+alertcondition(gatLongo, title="LONG 24h (Setup H1 + rompeu topo da correcao + 50%)", message="LONG")
+alertcondition(gatCurto, title="SHORT 24h (Setup H1 + rompeu fundo da correcao + 50%)", message="SHORT")
+
+if gatLongo
+    alert("LONG " + syminfo.tickerid + " @ " + str.tostring(close, format.mintick) + " | zona50 H1 " + str.tostring(nivel_50, format.mintick) + " +- " + str.tostring(rng_h1 * (perc_zona / 100.0), format.mintick) + " | Stop " + str.tostring(stopLong, format.mintick) + " | Alvo " + str.tostring(h1_topo, format.mintick), alert.freq_once_per_bar_close)
+if gatCurto
+    alert("SHORT " + syminfo.tickerid + " @ " + str.tostring(close, format.mintick) + " | zona50 H1 " + str.tostring(nivel_50, format.mintick) + " +- " + str.tostring(rng_h1 * (perc_zona / 100.0), format.mintick) + " | Stop " + str.tostring(stopShort, format.mintick) + " | Alvo " + str.tostring(h1_fundo, format.mintick), alert.freq_once_per_bar_close)

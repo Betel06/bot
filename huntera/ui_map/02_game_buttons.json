@@ -1,0 +1,65 @@
+[
+  {
+    "tag": "BUTTON",
+    "text": "English",
+    "x": 358,
+    "y": 323,
+    "w": 56,
+    "h": 37,
+    "cls": ""
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Português",
+    "x": 423,
+    "y": 323,
+    "w": 73,
+    "h": 37,
+    "cls": "active"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Alertas",
+    "x": 511,
+    "y": 323,
+    "w": 85,
+    "h": 45,
+    "cls": "secondary"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Sair da conta",
+    "x": 625,
+    "y": 323,
+    "w": 128,
+    "h": 45,
+    "cls": "secondary"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "…",
+    "x": 806,
+    "y": 432,
+    "w": 53,
+    "h": 41,
+    "cls": ""
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Excluir",
+    "x": 884,
+    "y": 432,
+    "w": 87,
+    "h": 41,
+    "cls": "secondary character-delete"
+  },
+  {
+    "tag": "BUTTON",
+    "text": "Criar",
+    "x": 917,
+    "y": 564,
+    "w": 68,
+    "h": 45,
+    "cls": "secondary"
+  }
+]
